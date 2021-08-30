@@ -1,0 +1,54 @@
+### `r groupNow` 
+
+```{r}
+permalink <- paste0("https://maayanlab.cloud/Enrichr/enrich?dataset=", permalinkNow[1])
+```
+
+Pathway enrichment was calculated for `r groupNow` using `enrichr`. The permalink to this analysis is available <a href='`r permalink`' target='_blank'>here</a>. 
+
+Here are some selected pathways which represents these results:
+
+```{r, fig.height=7, fig.width=11}
+dbsNow <- c("KEGG_2021_Human", "GO_Biological_Process_2021",
+            "ChEA_2016", "BioPlanet_2019")
+maxval <- 2000
+print(genesNow)
+log <- capture.output(enres <- enrichr(genesNow, databases = dbsNow))
+print(enres)
+# plotLst <- lapply(names(enres), function(enrNow) {
+#   enrNowData <- enres[[enrNow]]
+#   enrNowData %>%
+#     slice_max(order_by = Combined.Score, n = 10) %>%
+#     # dplyr::mutate(Combined.Score = case_when(Combined.Score > maxval ~ maxval,
+#     #                                          TRUE ~ Combined.Score)) %>%
+#     dplyr::mutate(logP = -log10(Adjusted.P.value)) %>%
+#     dplyr::mutate(Term = substr(Term, 1, 50)) %>%
+#     dplyr::mutate(Term = stringr::str_wrap(Term,  width = 40)) %>%
+#     arrange(Combined.Score) %>%
+#     dplyr::mutate(Term = factor(Term, levels = unique(Term))) %>%
+#     ggplot(aes(x = Term, y = Combined.Score, fill = logP)) +
+#     geom_col() +
+#     ggpubr::rotate() +
+#     xlab(NULL) +
+#     ylab(paste0("Combined Score (max ", maxval, ")")) +
+#     scale_y_continuous(expand = c(0, 1)) +
+#     labs(title = enrNow, subtitle = paste0("DRLA: ", groupNow)) +
+#     theme_classic(base_size = 11)
+# })
+# ggpubr::ggarrange(plotlist = plotLst, align = "v")
+```
+
+
+Here are the genes which were found in the overlap group:
+
+```{r}
+# tibble(
+#   "Genes" = genesNow
+# ) %>%
+#   DT::datatable(extensions = 'Buttons', 
+#                 options = list(dom = 'Bfrtip',
+#                                buttons = list(list(extend='copy'),
+#                                               list(extend='csv', filename = groupNow),
+#                                               list(extend = 'excel', filename = groupNow))))
+```
+

@@ -1,0 +1,8 @@
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - bwa-mem2
+  - bwa
+  - samtools
+  - samblaster

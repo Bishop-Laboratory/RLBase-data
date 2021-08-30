@@ -1,0 +1,192 @@
+---
+title: "RSeq - Fourier Analysis classifier"
+author: "Daniel Montemayor<br><small>Center for Renal Precision Medicine<br>University of Texas Health San Antonio School of Medicine</small>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    number_sections: true
+    toc_float: 
+      collapsed: false
+    code_folding: hide
+    theme: cerulean
+params:
+  datadir: '../../misc/datasets_for_fft_testing'
+  seed: 100111001
+---
+
+![Center for Renal Precision Medicine](https://dmontemayor.github.io/assets/Long_SOM/horizontal/JPG/UTHSA_Long-SOM_H_CMYK.jpg)
+
+```{r setup, message=FALSE, warning=FALSE}
+#Requirements
+requirements <- c("tableone", "reshape2", "ggplot2", 
+                  "Boruta", "caret", "caretEnsemble", "kernlab")
+#CRAN repository
+repos <- "http://cran.us.r-project.org"
+#install and load missing requirements
+for (pack in requirements){
+  if( !is.element(pack, .packages(all.available = TRUE)) ) {
+    install.packages(pack, repos = repos)
+  }
+  library(pack, character.only = TRUE)
+}
+##uncomment this block of code to install RSeqR with git personal access token
+##install RSeqR with git PAtoken
+#if (! require("RSeqR")){
+#  try(remotes::install_github("Bishop-Laboratory/RSeqR", dependencies = "Imports",
+#                              force = TRUE,
+#                              auth_token = getPass(msg = "Enter git personal access token: ")))
+#  require("RSeqR") #use require to give warning if try failed and avoid error
+#}
+##assert RSeqR is loaded
+#if (! "package:RSeqR" %in% search()){
+#  #throw error and exit
+#  stop("RSeqR package is not installed. Do you have a git personal access token?")
+#}
+#globals
+set.seed(params$seed)
+```
+
+```{r load}
+#define a function that returns an array of Zscores given a filename
+getZscores <- function(fname){
+  #init Zscores
+  Zscores <- c()
+  #get path the file
+  fpath <- file.path(params$datadir, "rlfs", fname)
+  #assert file exists
+  if(file.exists(fpath)){
+    #init rdata
+    rdata <- NULL
+    #try to load the rdata
+    try(load(fpath))
+    #try to get the Zscores
+    try(Zscores <- rlfsRes[[2]]$`regioneR::numOverlaps`$shifted.z.scores)
+  }
+  #return Zscores
+  return(Zscores)
+}
+#load manifest
+metadata <- read.csv(file.path(params$datadir, 'manifest.csv'))
+#create dataframe that holds the Zscore data
+Zdata <- data.frame(row.names = metadata$id)
+Zdata$group <- as.factor(metadata$group) #make sure label is a factor
+Zdata$Z <- lapply(basename(metadata$filename), getZscores)
+```
+
+```{r transformations}
+#compute Fourier transform of Z
+Zdata$W <- lapply(Zdata$Z, fft)
+#compute autocorrelation on Z
+Zdata$Zacf <- lapply(Zdata$Z, function(x){
+  #y <- acf(x, lag.max = length(x)/1, plot = FALSE, type = "correlation")
+  y <- acf(x, lag.max = length(x)/1, plot = FALSE, type = "covariance")
+  return(drop(y$acf))
+  })
+#compute Fourier transform of the autocorrelation 
+Zdata$Wacf <- lapply(Zdata$Zacf, fft)
+```
+
+```{r feat_eng}
+#compute first and second moments for Z, Zacf, Re(W), Im(W), Re(Wacf), Im(Wacf) 
+Zdata$Z1 <- as.numeric(lapply(Zdata$Z, mean))
+Zdata$Z2 <- as.numeric(lapply(Zdata$Z, function(x){sqrt(sum(x*x))}))
+Zdata$Zacf1 <- as.numeric(lapply(Zdata$Zacf, mean))
+Zdata$Zacf2 <- as.numeric(lapply(Zdata$Zacf, function(x){sqrt(sum(x*x))}))
+Zdata$ReW1 <- as.numeric(lapply(Zdata$W, function(x){mean(Re(x))}))
+Zdata$ReW2 <- as.numeric(lapply(Zdata$W, function(x){sqrt(sum(Re(x)*Re(x)))}))
+Zdata$ImW1 <- as.numeric(lapply(Zdata$W, function(x){mean(Im(x))}))
+Zdata$ImW2 <- as.numeric(lapply(Zdata$W, function(x){sqrt(sum(Im(x)*Im(x)))}))
+Zdata$ReWacf1 <- as.numeric(lapply(Zdata$Wacf, function(x){mean(Re(x))}))
+Zdata$ReWacf2 <- as.numeric(lapply(Zdata$Wacf, function(x){sqrt(sum(Re(x)*Re(x)))}))
+Zdata$ImWacf1 <- as.numeric(lapply(Zdata$Wacf, function(x){mean(Im(x))}))
+Zdata$ImWacf2 <- as.numeric(lapply(Zdata$Wacf, function(x){sqrt(sum(Im(x)*Im(x)))}))
+#declare engineered features
+feats <- c("Z1", "Z2", "Zacf1", "Zacf2", "ReW1", "ReW2", "ImW1", "ImW2", "ReWacf1", "ReWacf2", "ImWacf1", "ImWacf2")
+```
+
+```{r preprocess}
+#power transform and Zscore
+prep <- preProcess(Zdata[, feats], method = c("center", "scale", "YeoJohnson"))
+#Standardize features
+Zdata[, feats] <- predict(prep, Zdata[, feats])
+```
+
+```{r table1}
+CreateTableOne(vars = feats, strata = "group" , data = Zdata, addOverall = TRUE)
+```
+
+```{r}
+#plot feature densities
+df.m <- melt(Zdata[, feats], id.vars = NULL)
+ggplot(df.m, aes(x = variable, y = value)) + geom_violin()
+```
+
+```{r feat_sel}
+#partition off a 40% discovery set for feature selection
+indexes = createDataPartition(Zdata$group, p = .50, list = F)
+train = Zdata[indexes, ]
+discoTest = Zdata[-indexes, ]
+indexes2 = createDataPartition(discoTest$group, p = .50, list = F)
+disco = discoTest[indexes2, ]
+test = discoTest[-indexes2, ]
+#formula
+eqn = formula(paste("group", paste(feats, collapse = " + "), sep = " ~ "))
+#feature selection with boruta
+tentativeboruta <- Boruta(eqn, data = disco)
+print(tentativeboruta)
+finalboruta <- TentativeRoughFix(tentativeboruta)
+print(finalboruta)
+#declare selected features
+selfeats <- names(finalboruta$finalDecision[which(finalboruta$finalDecision=='Confirmed')])
+```
+
+```{r report_feature_selection}
+#plot feature selection
+plot(finalboruta, xlab = "", xaxt = "n")
+lz<-lapply(1:ncol(finalboruta$ImpHistory), function(i){
+  finalboruta$ImpHistory[is.finite(finalboruta$ImpHistory[,i]),i]
+  })
+names(lz) <- colnames(finalboruta$ImpHistory)
+Labels <- sort(sapply(lz, median))
+axis(side = 1, las=2, labels = names(Labels),
+     at = 1:ncol(finalboruta$ImpHistory), cex.axis = 0.7)
+```
+
+```{r, declare_stacking_algs}
+#regresion formula using selected features 
+eqn = formula(paste("group", paste(selfeats, collapse = " + "), sep = " ~ "))
+#Use 5-fold cross validation repeated 15 times for training control
+kfolds= 10
+nrep= 5
+tctrl <- trainControl(method = "repeatedcv", number=kfolds, repeats = nrep,
+                      #index = createFolds(disco$group, kfolds),
+                      classProbs = TRUE, summaryFunction = twoClassSummary,
+                      savePredictions='all', search="random")
+# create submodels using data excluding the disco set
+algorithmList <- c('lda', 'rpart', 'glm', 'knn', 'svmRadial')
+models <- caretList(eqn, data=train, trControl=tctrl,
+                    methodList=algorithmList, metric="ROC")
+results <- resamples(models)
+summary(results)
+dotplot(results)
+```
+
+```{r}
+# stack using rf using 10-fold cv repeated 5 times
+stacked_model <- caretStack(models, method="rf", metric="ROC", 
+                        trControl=tctrl)
+print(stacked_model)
+```
+
+```{r predict}
+#predict on the disco set (would be best to have an external validation set)
+yhat <- predict(stacked_model, test)
+confusionMatrix(yhat, test$group)
+# library(MLeval)
+# evalm(stacked_model)
+FFTModel <- stacked_model
+save(prep, FFTModel, file = "../../../RMapDB-shiny/data/FFTModel.rda")
+save(prep, FFTModel, file = "FFTModel.rda")
+```

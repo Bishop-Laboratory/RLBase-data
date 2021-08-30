@@ -1,0 +1,435 @@
+---
+title: "R-Loop Analysis for SU2C talk"
+author: "Henry Miller"
+date: "8/1/2021"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false 
+    code_folding: hide
+    theme: journal
+    highlight: haddock
+---
+
+```{r setup, warning=FALSE, message=FALSE, echo=FALSE, include=FALSE}
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+knitr::knit_hooks$set(optipng = knitr::hook_optipng)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, 
+                      cache = TRUE, optipng='', cache.lazy = FALSE,
+                      echo = TRUE)
+```
+
+```{r libraries}
+library(magrittr)
+library(tidyverse)
+library(ChIPpeakAnno)
+library(regioneR)
+library(rtracklayer)
+library(magrittr)
+library(enrichR)
+library(EnsDb.Hsapiens.v86)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(ChIPseeker)
+
+RLOOP_PEAKS <- "analyses/RLoop_Table_Analysis/data/rloops/strategy.a__10bp__peaks.narrowPeak"
+RL_BW <- "analyses/RLoop_Table_Analysis/data/counts/strategy.a__10bp__counts.bw"
+GENE_BED <- "misc/genes.bed"
+RLOOP_MAT_TSS <- "analyses/RLoop_Table_Analysis/data/rloops/rloop_mat.tss.npz"
+RLOOP_MAT_GENE <- "analyses/RLoop_Table_Analysis/data/rloops/rloop_mat.gene.npz"
+RLOOP_IMG_GENE <- "analyses/RLoop_Table_Analysis/data/rloops/rloop_mat.gene.png"
+RLOOP_PDF_GENE <- "analyses/RLoop_Table_Analysis/data/rloops/rloop_mat.gene.pdf"
+RL_BW_URI <- "s3://rmapdb-data/misc/rloop_consensus.bw"
+RL_PEAKS_URI <- "s3://rmapdb-data/misc/rloop_consensus.narrowPeak"
+MAX_RL_SIZE <- 5000
+THREADS <- floor(parallel::detectCores() / 1.2)
+
+system("rm -rf analyses/RLoop_Table_Analysis/data/peaksFinal"); dir.create("analyses/RLoop_Table_Analysis/data/peaksFinal", showWarnings = FALSE)
+rmap <- read_csv("analyses/scored_rmap_full_11_17_2020.csv")
+rmap %<>%
+  dplyr::filter(mode_group %in% "DRIP",
+         genome == "hg38",
+         Condition == "S9.6",
+         MACS2__total_peaks > 1500 & xgbverdict == 1) %>%
+  dplyr::mutate(peak = paste0("analyses/RLoop_Table_Analysis/data/peaks/", sample_name, "_hg38.unstranded.broadPeak")) %>%
+  dplyr::filter(file.exists(peak)) %T>% {
+    pull(., peak) %>%
+    sapply(file.copy, to="analyses/RLoop_Table_Analysis/data/peaksFinal")
+  }
+
+
+# Annotations
+annoData <- ChIPpeakAnno::toGRanges(EnsDb.Hsapiens.v86, feature = "gene")
+rtracklayer::export(annoData, con = GENE_BED)
+# TSS region
+tss <- getPromoters(TxDb=TxDb.Hsapiens.UCSC.hg38.knownGene, 
+                    upstream=3000, 
+                    downstream=3000)
+
+# Annotation function
+annoRL <- function(gr, max_rl_size) {
+  gr <- gr[width(gr) < max_rl_size,]
+  gr <- keepStandardChromosomes(gr, pruning.mode = "coarse")
+  anno <- annotatePeakInBatch(myPeakList = gr, AnnotationData = annoData, 
+                      output = "overlapping")
+  anno <- anno[! is.na(anno$feature),]
+  annodf <- as.data.frame(anno)
+  mapping <- AnnotationDbi::select(EnsDb.Hsapiens.v86, 
+                                   keys = keys(EnsDb.Hsapiens.v86), 
+                                   columns = "SYMBOL")
+  annodf <- left_join(annodf, mapping , by = c('feature' = "GENEID"))
+  anno$SYMBOL <- annodf$SYMBOL 
+  return(anno)
+}
+
+# Read RLoops
+readRL <- function(x, max_rl_size) {
+  readr::read_tsv(x, comment = "#", col_names = c(
+    "seqnames", "start", "end", "name", "score", "strand", "signalValue", "pval", "qval", "peak"
+  )) %>%
+    dplyr::filter(end - start < max_rl_size) %>%
+    as.data.frame() %>%
+    ChIPpeakAnno::toGRanges() 
+}
+
+urlExists <- function(url) {
+  identical(
+    httr::status_code(
+      # Checks HEAD only due to size constraints
+      httr::HEAD(
+        url
+      )
+    ), 200L  # Checks if response is ok
+  )
+}
+
+
+checkRLFSAnno <- function(genome) {
+  return(
+    urlExists(
+      paste0(
+        "https://rmapdb-data.s3.us-east-2.amazonaws.com/rlfs-beds/", 
+        genome, ".rlfs.bed"
+      )
+    )
+  )
+}
+
+getRLFSAnno <- function(genome) {
+  
+  # Check if annotations available first
+  if (! checkRLFSAnno(genome)) {
+    stop("No RLFS annotations available for ", genome)
+  }
+  
+  # Return as a GRanges object
+  return(
+    regioneR::toGRanges(
+      as.data.frame(
+        suppressMessages(readr::read_tsv(
+          paste0(
+            "https://rmapdb-data.s3.us-east-2.amazonaws.com/rlfs-beds/", 
+            genome, ".rlfs.bed"
+          ),
+          col_names = FALSE))
+      )
+    )
+  )
+}
+
+
+```
+
+# Overview
+
+We evaluated the output from the various strategies used to generate a set of standardized Rloops.
+
+
+```{r}
+rmap %<>%
+  mutate(Cell = case_when(
+    Group == "Li" ~ "Breast Tissue",
+    TRUE ~ Cell
+  )) %>%
+  dplyr::select(Sample=clean_name, Mode=mode, Tissue=Cell, `RLoops Detected`=MACS2__total_peaks)  %T>%
+  {tableone::CreateTableOne(vars = c("RLoops Detected", "Mode", "Tissue"), data=.) %>%
+  print()}
+```
+
+The table of samples can be observed here:
+
+```{r}
+DT::datatable(rmap)
+```
+
+
+## Results
+
+```{r}
+rloops <- readRL(RLOOP_PEAKS, max_rl_size=MAX_RL_SIZE)
+rlAnno <- annotatePeak(rloops, verbose = FALSE, TxDb = TxDb.Hsapiens.UCSC.hg38.knownGene)
+annotRL <- annoRL(rloops, max_rl_size = MAX_RL_SIZE) %>% as.data.frame
+# if (! file.exists(RLOOP_MAT_TSS) | ! file.exists(RLOOP_MAT_GENE)) {
+#   system(paste0(". ~/miniconda3/etc/profile.d/conda.sh && conda activate deeptools && ",
+#                 "computeMatrix reference-point -S ", RL_BW, " -p ", THREADS, 
+#                 " --verbose --missingDataAsZero -b 3000 -a 3000 --skipZeros	",
+#                 " -R ", GENE_BED, " --referencePoint TSS -o ", RLOOP_MAT_TSS))
+#   system(paste0(". ~/miniconda3/etc/profile.d/conda.sh && conda activate deeptools && ",
+#                 "computeMatrix scale-regions -S ", RL_BW, " -p ", THREADS, 
+#                 " --verbose --missingDataAsZero -b 3000 -a 3000 --skipZeros	",
+#                 " -R ", GENE_BED, " -m 6000 -o ", RLOOP_MAT_GENE))
+#   system(paste0("plotHeatmap --matrixFile ", RLOOP_MAT_GENE, 
+#                 " --outFileName ", RLOOP_IMG_GENE," --heatmapWidth 8 --heatmapHeight 19 ",
+#                 " --colorMap inferno --samplesLabel 'R-loop Consensus'"))
+#   system(paste0("plotHeatmap --matrixFile ", RLOOP_MAT_GENE, 
+#                 " --outFileName ", RLOOP_PDF_GENE," --heatmapWidth 8 --heatmapHeight 19 ",
+#                 " --colorMap inferno --samplesLabel 'R-loop Consensus'"))
+#   system(paste0("aws s3 --region us-west-2 cp ", RL_BW, " ", RL_BW_URI, " --acl public-read"))
+#   system(paste0("aws s3 --region us-west-2 cp ", RLOOP_PEAKS, " ", RL_PEAKS_URI, " --acl public-read"))
+# }
+```
+
+![Enrichment of R-Loop consensus signal around genes](data/rloops/rloop_mat.gene.png)
+
+
+```{r}
+
+# How to change the order of the pie chart labels
+anno.df <- ChIPseeker:::getAnnoStat(rlAnno)
+levels(anno.df$Feature) <- c("Promoter (<=1kb)",  "Promoter (1-2kb)", "Promoter (2-3kb)",
+                             "5' UTR", "1st Exon",  "Other Exon",
+                             "1st Intron", "Other Intron", "3' UTR",
+                             "Downstream (<=300)", 
+                             "Distal Intergenic" )
+col <- ChIPseeker:::getCols(nrow(anno.df))
+ChIPseeker:::annoPie(anno.df = anno.df, ndigit=2, cex=0.9,col=col,
+                     legend.position="rightside", pie3D=FALSE, radius = 0.8)
+
+```
+
+
+
+
+```{r}
+hist(width(rloops), breaks = 100, xlab = "R-Loop Width", main = "R-loop consensus peak width", col="firebrick")
+
+```
+
+
+```{r}
+# Check RLFS, chrom_sizes, and mask
+RLFS <- getRLFSAnno("hg38")
+
+# Prevent stranded assignment
+GenomicRanges::strand(RLFS) <- "*"
+RLFS <- GenomicRanges::reduce(RLFS)
+
+```
+
+```{r}
+
+pt <- regioneR::permTest(A=rloops, B=RLFS, 
+                         genome="hg38", 
+                         randomize.function=regioneR::circularRandomizeRegions,
+                         evaluate.function=regioneR::numOverlaps, verbose = T
+                         # alternative = "greater"
+                         )
+
+```
+
+```{r}
+
+z <- regioneR::localZScore(A=rloops, B=RLFS, pt, window = 5000, step = 50)
+
+```
+
+
+```{r}
+plot(pt)
+
+```
+
+
+```{r}
+
+plot(z)
+```
+
+```{r}
+
+rlrlfsol <- findOverlapsOfPeaks(list(
+  "RLoops" = rloops,
+  "RLFS" = RLFS
+))
+makeVennDiagram(rlrlfsol, margin = .05, fill = c("firebrick", "skyblue"))
+```
+
+```{r}
+
+symbs <- annotRL %>%
+  as.data.frame() %>%
+  dplyr::filter(! is.na(SYMBOL)) %>%
+  pull(SYMBOL) %>%
+  unique()
+write_csv(as_tibble(symbs), "asd.csv")
+
+annoData %>%
+  as.data.frame() %>%
+  dplyr::filter(! gene_name %in% symbs)
+  
+
+```
+
+
+
+```{r}
+
+rl <- list.files("../rloops_and_splicing/data/DRIPSeq-E7-TC32-MSC/New/rseq_out/peaks/", pattern = ".+.broadPeak", recursive = TRUE, full.names = TRUE)
+tc32 <- rl[grep(rl, pattern = ".+TC32_[0-9]+_.+")]
+tc32e7 <- rl[grep(rl, pattern = ".+TC32_E7_.+")]
+
+names(tc32) <- gsub(tc32, pattern = ".+//([TC32_0-9]+)_S[0-9]+/.+", replacement = "\\1")
+tc32 <- lapply(tc32, toGRanges)
+
+names(tc32e7) <- gsub(tc32e7, pattern = ".+//([TC32_E7_0-9]+)_S[0-9]+/.+", replacement = "\\1")
+tc32e7 <- lapply(tc32e7, toGRanges)
+
+tclst <- c(tc32, tc32e7)
+tclst.anno <- lapply(tclst, annotatePeak, verbose = FALSE, TxDb = TxDb.Hsapiens.UCSC.hg38.knownGene)
+plotDistToTSS(tclst.anno)
+plotAnnoBar(tclst.anno)
+
+tlst <- list(
+  "TC32 - NT" = tc32,
+  "TC32 - E7" = tc32e7
+)
+
+rlst <- lapply(tlst, function(x) {
+  ol <- findOverlapsOfPeaks(x)
+  pl <- ol$peaklist5
+  pl[[grep(names(pl), pattern = ".+//.+//.+")]]
+})
+
+rlst["RLoops"] <- rloops
+
+rlstOl <- findOverlapsOfPeaks(rlst)
+save(rlstOl, file = "rlstOl.rda")
+```
+
+
+```{r}
+
+rlstol <- findOverlapsOfPeaks(rlst)
+makeVennDiagram(rlstol)
+save(rlstol, file = "rlstol.rda")
+```
+
+
+```{r}
+tc32ol <- rlstOl$overlappingPeaks$`TC32 - NT///RLoops`[grep(names(rlstOl$overlappingPeaks$`TC32 - NT///RLoops`), pattern = ".*RLoop.*")] %>%
+  lapply(., function(x) {
+    rownames(x)
+  }) %>%
+  unlist() %>%
+  gsub(pattern = "X[0-9]+_", replacement = "") %>%
+  unique() %>%
+  rloops[.]
+
+tc32e7ol <- rlstOl$overlappingPeaks$`TC32 - E7///RLoops`[grep(names(rlstOl$overlappingPeaks$`TC32 - E7///RLoops`), pattern = ".*RLoop.*")] %>%
+  lapply(., function(x) {
+    rownames(x)
+  }) %>%
+  unlist() %>%
+  gsub(pattern = "X[0-9]+_", replacement = "") %>%
+  unique() %>%
+  rloops[.]
+
+tc32ol <- list(
+  "RLoops-all" = rlstOl$peaklist$`TC32 - NT///TC32 - E7`
+)
+
+```
+
+
+```{r}
+
+dd <- rlstol$peaklist$`TC32_1///TC32_2///TC32_3///RLoops`$peakNames %>%
+  unlist() 
+dd <- dd[grep(dd, pattern = "RLoops")] %>%
+  gsub(pattern = "RLoops__", replacement = "")
+rltc32a <- rloops[dd]
+
+```
+
+
+```{r}
+rltc32 <- list(
+  "RLoops-All" = rloops,
+  "RLoops-TC32" = rltc32a
+)
+
+rltc32Anno <- lapply(rltc32, annotatePeak, verbose = FALSE, TxDb = TxDb.Hsapiens.UCSC.hg38.knownGene)
+annotRLTC32 <- lapply(rltc32, annoRL, max_rl_size = MAX_RL_SIZE)
+```
+
+
+```{r}
+# How to change the order of the pie chart labels
+anno.df <- lapply(rltc32Anno, ChIPseeker:::getAnnoStat)
+
+anno.df2 <-  ChIPseeker:::list_to_dataframe(anno.df)
+levels(anno.df2$Feature) <- c("Promoter (<=1kb)",  "Promoter (1-2kb)", "Promoter (2-3kb)",
+                             "5' UTR", "1st Exon",  "Other Exon",
+                             "1st Intron", "Other Intron", "3' UTR",
+                             "Downstream (<=300)", 
+                             "Distal Intergenic" )
+dd <- ChIPseeker:::plotAnnoBar.data.frame(anno.df2, categoryColumn = ".id") + 
+  scale_color_brewer()
+ChIPseeker::plotDistToTSS(rltc32Anno) 
+
+```
+
+
+
+
+```{r}
+hist(width(rloops), breaks = 100, xlab = "R-Loop Width", main = "R-loop consensus peak width", col="firebrick")
+hist(width(rltc32$`RLoops-TC32`), breaks = 100, xlab = "R-Loop Width", main = "R-loop consensus peak width", col="firebrick")
+
+```
+
+
+```{r}
+# Check RLFS, chrom_sizes, and mask
+RLFS <- getRLFSAnno("hg38")
+
+# Prevent stranded assignment
+GenomicRanges::strand(RLFS) <- "*"
+RLFS <- GenomicRanges::reduce(RLFS)
+
+```
+
+```{r}
+
+pt <- regioneR::permTest(A=rloops, B=RLFS, 
+                         genome="hg38", 
+                         randomize.function=regioneR::circularRandomizeRegions,
+                         evaluate.function=regioneR::numOverlaps, verbose = T
+                         # alternative = "greater"
+                         )
+
+```
+
+```{r}
+
+z <- regioneR::localZScore(A=rloops, B=RLFS, pt, window = 5000, step = 50)
+
+```
+
+
+```{r}
+plot(pt)
+
+```
+
