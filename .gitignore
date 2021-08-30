@@ -82,3 +82,6 @@ Prepare-RMapDB-Tables/**/logs/*
 *.html
 *.bai
 *.bed
+*.png
+*.pdf
+
