@@ -67,6 +67,7 @@ misc/**/*_files/
 *.narrowPeak
 *.sizes
 tmp/
+*.tar.gz
 
 Prepare-RMapDB-Tables/**/sras/*
 Prepare-RMapDB-Tables/**/QC/*

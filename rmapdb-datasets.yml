@@ -5,15 +5,43 @@ channels:
   - defaults
   - r
 dependencies:
-  - flake8
-  - pytest
-  - samtools
-  - coverage
+  - r-remotes
+  - r-tidyverse
+  - r-pheatmap
+  - bioconductor-regioner
+  - bioconductor-genomeinfodb
+  - bioconductor-genomicranges
+  - bioconductor-genomicfeatures
+  - bioconductor-rtracklayer
+  - bioconductor-ensembldb
+  - r-httr
+  - r-dt
+  - r-plotly
+  - r-rcolorbrewer
+  - r-readr
+  - r-plyr
+  - r-pbapply
+  - r-r.utils
+  - r-covr
+  - r-vroom
+  - r-lattice
+  - r-data.table
+  - r-gridextra
+  - r-pheatmap
+  - r-ggplotify
+  - r-kableextra
+  - r-biocmanager
+  - r-ggpubr
+  - r-msigdbr
+  - r-caret
+  - r-kernlab
+  - r-randomforest
+  - r-rpart
+  - r-mass
+  - r-rmarkdown
   # The last version with cores working correctly in api
   # TODO: submit an issue about this...
   - snakemake-minimal=6.4.0
-  # Boa is required for conda mambabuild
-  - boa
   - graphviz
   - pandas==1.2.0
   - awscli

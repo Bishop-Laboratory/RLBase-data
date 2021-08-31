@@ -28,7 +28,8 @@ conda activate rmapdb-datasets
 
 ```shell
 pip install -e ../RSeqCLI/
-R CMD build ../RSeqR
+R -e "BiocManager::install(c('EnsDb.Hsapiens.v86', 'EnsDb.Mmusculus.v79'))"
+R -e "remotes::install_local('../RSeqR/', dependencies=TRUE)"
 ```
 
 ## Generate datasets
@@ -51,6 +52,18 @@ Rscript scripts/makeAvailableGenomes.R
 
 ```shell
 Rscript scripts/makeRLFSBedFiles.R
+```
+
+4. Make pipeline manifests from the catalog of samples (change path to current one)
+```shell
+CATALOG="RMapDB_manifest_27082021.xlsx"
+RSEQ_MANIFEST="rmap-data/rmap_manifest.csv"
+Rscript scripts/doMakeManifest.R $CATALOG $RSEQ_MANIFEST
+```
+
+5. Run RSeqCLI to build and test the pipeline config
+```shell
+RSeqCLI build rmap-data/rmap/ $RSEQ_MANIFEST
 ```
 
 4. (optional) Upload the results to AWS (Requires admin privileges)
