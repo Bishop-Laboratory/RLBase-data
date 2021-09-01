@@ -34,6 +34,11 @@ R -e "remotes::install_local('../RSeqR/', dependencies=TRUE)"
 
 ## Generate datasets
 
+
+```shell
+snakemake --snakefile rmapdb-datasets.smk --configfile ../RSeqCLI/tests/rseq_out_public_rna/config.json -d rmap-data/ --notebook-listen 0.0.0.0:6123 --edit-notebook misc/rmap_blacklist.csv
+```
+
 ### Preliminary: Find Available genomes, RLFS bed files, etc
 
 1. Download `QmRLFS-finder.py` (NOTE: First read `scripts/QmRLFS-finder/README.md`)
@@ -56,7 +61,7 @@ Rscript scripts/makeRLFSBedFiles.R
 
 4. Make pipeline manifests from the catalog of samples (change path to current one)
 ```shell
-CATALOG="RMapDB_manifest_27082021.xlsx"
+CATALOG="rmap-data/RMapDB_manifest_27082021.xlsx"
 RSEQ_MANIFEST="rmap-data/rmap_manifest.csv"
 Rscript scripts/doMakeManifest.R $CATALOG $RSEQ_MANIFEST
 ```
@@ -64,6 +69,12 @@ Rscript scripts/doMakeManifest.R $CATALOG $RSEQ_MANIFEST
 5. Run RSeqCLI to build and test the pipeline config
 ```shell
 RSeqCLI build rmap-data/rmap/ $RSEQ_MANIFEST
+```
+
+6. Then check the pipeline to ensure it will work correctly:
+
+```shell
+RSeqCLI check rmap-data/rmap/ --bwamem2 --noreport
 ```
 
 4. (optional) Upload the results to AWS (Requires admin privileges)

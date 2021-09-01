@@ -18,6 +18,7 @@ analysis/
 *data/rlfs*
 bin/RSeq/uploads/
 *.Rhistory*
+**/quant/**
 misc/export
 *.pyc
 __pycache__/

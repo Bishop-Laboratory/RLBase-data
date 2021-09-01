@@ -29,7 +29,7 @@ catalogGrouped <- catalog %>%
 
 # Get the manifest for RMap
 catalogGrouped %>%
-  filter(group == "rmap",
+  filter(group != "other",
          ! mode %in%  unbuildable) %>%
   unique() %>%
   write_csv(args[2])
