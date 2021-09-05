@@ -78,17 +78,28 @@ These files were generated via the following:
 wget -O scripts/QmRLFS-finder/QmRLFS-finder.py https://raw.githubusercontent.com/piroonj/QmRLFS-finder/master/QmRLFS-finder.py
 ```
 
-2. Generate RLFS Bed Files
+2. Download and unpack genomes 
 
 ```shell
-Rscript scripts/makeRLFSBedFiles.R
+Rscript scripts/makeRLFSBeds.R 1 FALSE
 ```
 
-4. Make pipeline manifests from the catalog of samples (change path to current one)
+3. Generate RLFS Bed Files (Takes several hours, depending on parallelization and download speed)
+
 ```shell
-CATALOG="rmap-data/RMapDB_manifest_27082021.xlsx"
-RSEQ_MANIFEST="rmap-data/rmap_manifest.csv"
-Rscript scripts/doMakeManifest.R $CATALOG $RSEQ_MANIFEST
+CORES=40  # Number of cores for parallel operations
+Rscript scripts/makeRLFSBeds.R $CORES TRUE
+```
+
+#### Prepare manifest
+
+1. Sample catalog is prepared by hand in an excel sheet
+
+2. Make pipeline manifests from catalog
+```shell
+CATALOG="rlbase-data/rlbase_catalog.xlsx"
+MANIFEST="rlbase-data/rlbase_manifest.csv"
+Rscript scripts/doMakeManifest.R $CATALOG $MANIFEST
 ```
 
 5. Run RSeqCLI to build and test the pipeline config

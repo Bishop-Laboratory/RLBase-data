@@ -167,5 +167,5 @@ buildAvailableGenomes <- function(test=FALSE, ...) {
 
 # Run the function to generate the availableGenomes rda data object
 library(magrittr)
-availableGenomes <- buildAvailableGenomes()
-save(availableGenomes, file = "misc-data/availableGenomes.rda", compress = "xz")
+available_genomes <- buildAvailableGenomes()
+save(available_genomes, file = "misc-data/available_genomes.rda", compress = "xz")
