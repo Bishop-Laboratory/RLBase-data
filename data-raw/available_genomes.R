@@ -6,6 +6,7 @@
 #' @importFrom rlang .data
 buildCondaEnv <- function(envName, ...) {
   
+  library(magrittr)
   
   # Create env and install
   reticulate::conda_create(envname = envName, ...)
@@ -30,6 +31,8 @@ getEffectiveGenomeSizes <- function(genome,
                                     envPath,
                                     lengths = c(36, 50, 75, 100, 125, 
                                                 150, 200, 250, 300)) {
+  
+  library(magrittr)
   
   fasta_file <- paste0("ftp://hgdownload.soe.ucsc.edu/goldenPath/",
                        genome, "/bigZips/", genome, ".fa.gz")
@@ -64,6 +67,8 @@ getEffGenSize <- function(len,
                           faFile,
                           envPath) {
   
+  library(magrittr)
+  
   # Get back to binary
   condaPath <- reticulate::conda_binary()
   
@@ -96,6 +101,8 @@ getEffGenSize <- function(len,
 #' @importFrom dplyr %>%
 #' @importFrom rlang .data
 buildAvailableGenomes <- function(test=FALSE, ...) {
+  
+  library("magrittr")
   
   envName <- buildCondaEnv(packages = "khmer", 
                            envName = "khmerEnv",
@@ -136,6 +143,7 @@ buildAvailableGenomes <- function(test=FALSE, ...) {
 
 # Main execution of the data building steps
 main <- function() {
+  library(magrittr)
   available_genomes <- buildAvailableGenomes()
   usethis::use_data(available_genomes, overwrite = TRUE)
 }

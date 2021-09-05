@@ -2,44 +2,75 @@
 
 This `README` outlines all the steps required to fully build (or update) the datasets in RMapDB.
 It has only been tested on `Ubuntu 18.04 LTS`. It will take several days/weeks to fully run the first
-time, and it is not recommended without significant access to bioinformatics resources and a very high-speed
-internet connection.
+time, and it is not recommended without access to high-performance computing resources.
 
 ## Setup
 
 1. Clone the repos
 
 ```shell
-git clone https://github.com/Bishop-Laboratory/RMapDB-Datasets.git
-git clone https://github.com/Bishop-Laboratory/RSeqCLI.git
-git clone https://github.com/Bishop-Laboratory/RSeqR.git
+git clone https://github.com/Bishop-Laboratory/RLBase-data.git
+git clone https://github.com/Bishop-Laboratory/RLPipes.git
+git clone https://github.com/Bishop-Laboratory/RLSeq.git
 ```
 
 2. Create the environment
 
 ```shell
-cd RMapDB-Datasets/
+cd RLBase-data/
 conda install -c conda-forge mamba -y
-mamba env create -f rmapdb-datasets.yml --force
-conda activate rmapdb-datasets
+mamba env create -f env.yml --force
+conda activate rlbaseData
 ```
 
-3. Install RSeqCLI and RSeqR
+3. Install RLPipes and RLSeq
 
 ```shell
-pip install -e ../RSeqCLI/
+pip install -e ../RLPipes/
 R -e "BiocManager::install(c('EnsDb.Hsapiens.v86', 'EnsDb.Mmusculus.v79'))"
-R -e "remotes::install_local('../RSeqR/', dependencies=TRUE)"
+R -e "remotes::install_local('../RLSeq/', dependencies=TRUE)"
 ```
 
 ## Generate datasets
 
+The following details the steps taking to generate and update RLBase datasets. 
+If you have write permissions on the AWS buckets used here, you can complete
+every step if `awscli` is configured:
 
 ```shell
-snakemake --snakefile rmapdb-datasets.smk --configfile ../RSeqCLI/tests/rseq_out_public_rna/config.json -d rmap-data/ --notebook-listen 0.0.0.0:6123 --edit-notebook misc/rmap_blacklist.csv
+aws configure
 ```
 
-### Preliminary: Find Available genomes, RLFS bed files, etc
+If you do not, then you will only be able to mirror and download 
+existing buckets.
+
+### Preliminary
+
+These preliminary steps just illustrate how the original annotation data and 
+genome info was collated.
+
+#### Available genome info
+
+Generate the available genome information using the script below (takes several hours):
+
+```shell
+conda deactivate
+R -e "source('scripts/makeAvailableGenomes.R')"
+conda activate rlbaseData
+```
+
+#### RLFS Beds files
+
+These data are now permanently available from the bucket located
+here: s3://rlbase-data/rlfs-beds/
+
+To download all files, run the following command:
+
+```shell
+aws s3 sync s3://rlbase-data/rlfs-beds/ rlfs-beds/
+```
+
+These files were generated via the following:
 
 1. Download `QmRLFS-finder.py` (NOTE: First read `scripts/QmRLFS-finder/README.md`)
 
@@ -47,13 +78,7 @@ snakemake --snakefile rmapdb-datasets.smk --configfile ../RSeqCLI/tests/rseq_out
 wget -O scripts/QmRLFS-finder/QmRLFS-finder.py https://raw.githubusercontent.com/piroonj/QmRLFS-finder/master/QmRLFS-finder.py
 ```
 
-2. Generate the available genome information
-
-```shell
-Rscript scripts/makeAvailableGenomes.R
-```
-
-3. Generate RLFS Bed Files
+2. Generate RLFS Bed Files
 
 ```shell
 Rscript scripts/makeRLFSBedFiles.R
@@ -85,6 +110,10 @@ aws s3 sync rlfs-beds/ s3://rmapdb-data/rlfs-beds/
 ```
 
 ### Sample peaks and coverage files
+
+```shell
+snakemake --snakefile rlbase-datasets.smk --configfile ../RSeqCLI/tests/rseq_out_public_rna/config.json -d rmap-data/ --notebook-listen 0.0.0.0:6123 --edit-notebook misc/rmap_blacklist.csv
+```
 
 1. Create the RMap Sample manifest from the latest hand-made excel manifest
 
