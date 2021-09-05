@@ -96,21 +96,43 @@ Rscript scripts/makeRLFSBeds.R $CORES TRUE
 1. Sample catalog is prepared by hand in an excel sheet
 
 2. Make pipeline manifests from catalog
+
 ```shell
 CATALOG="rlbase-data/rlbase_catalog.xlsx"
 MANIFEST="rlbase-data/rlbase_manifest.csv"
-Rscript scripts/doMakeManifest.R $CATALOG $MANIFEST
+Rscript scripts/makeManifest.R $CATALOG $MANIFEST
 ```
 
-5. Run RSeqCLI to build and test the pipeline config
+3. Build the pipeline config
 ```shell
-RSeqCLI build rmap-data/rmap/ $RSEQ_MANIFEST
+RLPIPESOUT="rlbase-data/rlpipes-out/"
+RLPipes build $RLPIPESOUT $MANIFEST
+cp $RLPIPESOUT/config.tsv $RLPIPESOUT/config.save.tsv
+```
+
+4. Fix any genomes which are mislabeled
+
+```shell
+Rscript scripts/fixGenomes.R $CATALOG $RLPIPESOUT/config.tsv
+```
+
+5. Remove any datasets which have to be re-run
+
+```shell
+Rscript scripts/cleanOld.R $CATALOG $RLPIPESOUT/config.tsv
 ```
 
 6. Then check the pipeline to ensure it will work correctly:
 
 ```shell
-RSeqCLI check rmap-data/rmap/ --bwamem2 --noreport
+RLPipes check $RLPIPESOUT --bwamem2 --noreport --tsv
+```
+
+7. Run the pipeline
+
+```shell
+CORES=179
+RLPipes run $RLPIPESOUT --bwamem2 --noreport --tsv -t $CORES
 ```
 
 4. (optional) Upload the results to AWS (Requires admin privileges)
