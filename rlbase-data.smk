@@ -27,17 +27,6 @@ other_data = [
 ]
 other_data = ["misc/" + ud for ud in other_data]
 
-
-# Data dumps
-data_dumps = [
-  "rmapdb_peaks",
-  "rmapdb_coverage",
-  "rmapdb_report_html",
-  "rmapdb_report_data",
-  "rmapdb_expression"
-]
-data_dumps = ["data-dumps/" + dd + ".tar.xz" for dd in data_dumps]
-
 # RMapDB Tables
 rmapdb_tables = [
   "rlregions_signal.tsv",
@@ -235,17 +224,17 @@ rule prep_model_samps:
 rule get_pca:
   input: "tables/rmap_corr.tsv"
   output: "tables/rmap_pca.tsv"
-  script: "scripts/doPCAAnalysis.R"
+  script: "scripts/pcaAnalyze.R"
 
 rule get_corr:
   input: coverage
   output: "tables/rmap_corr.tsv"
-  script: "scripts/doCorrAnalysis.R"
+  script: "scripts/corrAnalyze.R"
 
 rule gather_anno:
   input:  peaks
   output: "tables/rmap_anno.tsv"
-  script: "scripts/doAnnoAnalysis.R"
+  script: "scripts/annoAnalyze.R"
 
 rule prep_rlfs_out:
   """Aggregator for RLFS ahead of tarball"""
@@ -253,5 +242,5 @@ rule prep_rlfs_out:
   output: 
     tarball="misc/rmap_rlfs/tarball.txt",
     rdas=rlfs_rdas
-  script: "scripts/doAnalyzeRLFS.R"
+  script: "scripts/rlfsAnalyze.R"
 

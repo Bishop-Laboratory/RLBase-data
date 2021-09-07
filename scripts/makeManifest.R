@@ -34,6 +34,7 @@ toBuild <- catalogGrouped %>%
          ! mode %in%  unbuildable) %>%
   unique() 
 
+# Write csv
 toBuild %>%
   write_csv(args[2])
 

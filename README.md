@@ -18,6 +18,7 @@ git clone https://github.com/Bishop-Laboratory/RLSeq.git
 
 ```shell
 cd RLBase-data/
+RLBASEDIR=$(pwd)
 conda install -c conda-forge mamba -y
 mamba env create -f env.yml --force
 conda activate rlbaseData
@@ -28,7 +29,8 @@ conda activate rlbaseData
 ```shell
 pip install -e ../RLPipes/
 R -e "BiocManager::install(c('EnsDb.Hsapiens.v86', 'EnsDb.Mmusculus.v79'))"
-R -e "remotes::install_local('../RLSeq/', dependencies=TRUE)"
+R -e "install.packages('ggprism', repos = 'http://cran.us.r-project.org')"
+R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
 ```
 
 ## Generate datasets
@@ -91,9 +93,23 @@ CORES=40  # Number of cores for parallel operations
 Rscript scripts/makeRLFSBeds.R $CORES TRUE
 ```
 
-#### Prepare manifest
+4. (optional) Upload the results to AWS (Requires admin privileges)
 
-1. Sample catalog is prepared by hand in an excel sheet
+```shell
+aws s3 sync misc-data/ s3://rmapdb-data/misc/
+aws s3 sync rlfs-beds/ s3://rmapdb-data/rlfs-beds/
+```
+
+## Run RLPipes on all public samples
+
+This part of the protocol requires a catalog of publicly-available R-loop-mapping
+samples, hand-curated in the manner described in the RLSuite publication. 
+
+The previous catalog is available [here](https://github.com/Bishop-Laboratory/RLBase-data/raw/main/rlbase-data/rlbase_catalog.xlsx)
+
+The following are the steps performed to generate the database:
+
+1. Prepare catalog of publicly-available samples. Current catalog can serve as a template.
 
 2. Make pipeline manifests from catalog
 
@@ -135,12 +151,104 @@ CORES=179
 RLPipes run $RLPIPESOUT --bwamem2 --noreport --tsv -t $CORES
 ```
 
-4. (optional) Upload the results to AWS (Requires admin privileges)
+8. Archive quant folders
 
 ```shell
-aws s3 sync misc/ s3://rmapdb-data/misc/
-aws s3 sync rlfs-beds/ s3://rmapdb-data/rlfs-beds/
+cp -r $RLPIPESOUT/quant $RLPIPESOUT/quant_save
+cd $RLPIPESOUT/quant_save
+find . -type d -maxdepth 1 -mindepth 1 -exec tar cfJ {}.tar.xz {} \;
+find . -type d -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
+cd $RLBASEDIR
 ```
+
+9. Archive peaks
+
+```shell
+mkdir $RLPIPESOUT/peaks_save
+find $RLPIPESOUT/peaks -type f -maxdepth 1 -mindepth 1 -name "*.broadPeak" -exec cp {} $RLPIPESOUT/peaks_save \;
+```
+
+10. Make tarballs
+
+```shell
+cd $RLPIPESOUT
+tar cfJ peaks.tar.xz peaks/
+tar cfJ coverage.tar.xz coverage/
+tar cfJ quant.tar.xz quant/
+tar cfJ logs.tar.xz logs/
+tar cfJ fastq_stats.tar.xz fastq_stats/
+tar cfJ bam_stats.tar.xz bam_stats/
+mkdir datadump
+find . -type f -maxdepth 1 -name "*.tar.xz" -exec mv {} datadump/ \;
+cp config.tsv datadump/
+cp config.json datadump/
+cp ../rlbase_catalog.xlsx datadump/
+cp ../rlbase_manifest.csv datadump/
+```
+
+11. Upload datasets to aws (requires admin privledges)
+
+```shell
+aws s3 sync $RLPIPESOUT/coverage/ s3://rlbase-data/coverage/
+aws s3 sync $RLPIPESOUT/peaks_save/ s3://rlbase-data/peaks/
+aws s3 sync $RLPIPESOUT/quant_save/ s3://rlbase-data/quant/
+aws s3 sync $RLPIPESOUT/bam_stats/ s3://rlbase-data/bam_stats/
+aws s3 sync $RLPIPESOUT/fastq_stats/ s3://rlbase-data/fastq_stats/
+aws s3 sync $RLPIPESOUT/datadump/ s3://rlbase-data/datadump/
+```
+
+12. Store .bam files (we used BOX for this part)
+
+```shell
+FTPSITE="ftp.box.com"
+REMOTEDIR="RMapDB-Archive/"
+lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
+```
+
+## Build discriminator model
+
+1. Calculate RLFS enrichment for each sample
+
+```shell
+CORES=44
+Rscript scripts/rlfsAnalyze.R $RLPIPESOUT/peaks $RLPIPESOUT/rlfs_rda $CORES
+```
+
+2. Upload to AWS
+
+```shell
+aws s3 sync $RLPIPESOUT/rlfs_rda/ s3://rlbase-data/rlfs_rda/
+```
+
+3. Get the samples for model buidling
+
+```shell
+CONFIG="rlbase-data/rlpipes-out/config.tsv"
+HOST="0.0.0.0"
+PORT=4848
+Rscript scripts/selectSamples.R $CONFIG $HOST $PORT
+```
+
+4. Then build the model
+
+```shell
+Rscript scripts/buildModel.R
+```
+
+5. Re-build RLSeq with new data
+
+```shell
+cp misc-data/FFTModel.rda ../RLSeq/data/
+cp misc-data/prepFeatures.rda ../RLSeq/data/
+R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
+```
+
+6. Classify samples
+
+```shell
+Rscript script/classifySamples.R
+```
+
 
 ### Sample peaks and coverage files
 
@@ -174,22 +282,7 @@ RSeqCLI check rmap-data/rmap/ --bwamem2 -t 44 --no-report
 RSeqCLI run rmap-data/rmap/ --bwamem2 -t 44 --no-report
 ```
 
-5. (optional) Upload datasets to aws (requires admin privledges)
 
-```shell
-aws s3 sync rmap-data/coverage/ s3://rmapdb-data/coverage/
-aws s3 sync rmap-data/peaks/ s3://rmapdb-data/peaks/
-aws s3 sync rmap-data/bam_stats/ s3://rmapdb-data/bam_stats/
-aws s3 sync rmap-data/fq_stats/ s3://rmapdb-data/fq_stats/
-```
-
-6. (optional) Store .bam files (we used BOX for this part)
-
-```shell
-FTPSITE="ftp.box.com"
-REMOTEDIR="RMapDB-Archive/bam/"
-lftp -c "open -u user,pass $FTPSITE; mput -O $REMOTEDIR rmap-data/bam/" 
-```
 
 ### Rebuild datasets for RSeqR
 
