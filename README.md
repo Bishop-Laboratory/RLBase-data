@@ -243,7 +243,6 @@ TODO: Maybe take out the annotation filter
 
 ```shell
 CONFIG=$RLPIPESOUT/config.tsv
-CATALOG="rlbase-data/rlbase_catalog.xlsx"
 HOST="0.0.0.0"
 PORT=4848
 Rscript scripts/selectSamples.R $CONFIG $HOST $PORT
@@ -271,16 +270,7 @@ Rscript scripts/classifySamples.R
 
 ## Get R-loop consensus
 
-1. Build the annotation table
-
-```shell
-CORES=44
-PEAKS=$RLPIPESOUT/peaks
-OUTANNO="rlbase-data/misc/annotatedPeaks.tsv"
-Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
-```
-
-2. Select final peakset
+1. Select final peakset
 
 ```shell
 Rscript scripts/prepareConsensus.R
@@ -290,130 +280,61 @@ Rscript scripts/prepareConsensus.R
 
 ```shell
 CORES=44
-snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --dryrun  # Verify
-snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --dag | dot -Tpng > misc-data/rlregions.png  # DAG
-snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES # Run it
+MANIFEST="rlbase_samples.tsv"
+BLACKLIST="https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --dryrun --config manifest=$MANIFEST blacklist=$BLACKLIST # Verify
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --config manifest=$MANIFEST blacklist=$BLACKLIST --dag | dot -Tpng > misc-data/rlregions.png  # DAG
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --config manifest=$MANIFEST blacklist=$BLACKLIST --cores $CORES # Run it
 ```
 
+## Other
 
-### Sample peaks and coverage files
+1. Build the annotation table (genomic features and genes)
 
 ```shell
-snakemake --snakefile rlbase-datasets.smk --configfile ../RSeqCLI/tests/rseq_out_public_rna/config.json -d rmap-data/ --notebook-listen 0.0.0.0:6123 --edit-notebook misc/rmap_blacklist.csv
+CORES=44
+PEAKS=$RLPIPESOUT/peaks
+OUTANNO="rlbase-data/misc/annotatedPeaks.tsv"
+Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
 ```
 
-1. Create the RMap Sample manifest from the latest hand-made excel manifest
-
-```shell
-Rscript scripts/createRMapDBManifests.R
-```
-
-2. Build the RSeqCLI config file for R-loop mapping samples (this will take several minutes)
-
-```shell
-RSeqCLI build rmap-data/rmap/ db-data/rmap_manifest.csv
-```
-
-3. Check that the workflow will execute properly
-
-```shell
-# --no-report indicates report files will not be generated
-RSeqCLI check rmap-data/rmap/ --bwamem2 -t 44 --no-report
-```
-
-4. Execute the workflow (will take several days/weeks to complete from scratch)
-
-```shell
-# --no-report indicates report files will not be generated
-RSeqCLI run rmap-data/rmap/ --bwamem2 -t 44 --no-report
-```
-
-
-
-### Rebuild datasets for RSeqR
-
-1. Run the RLFS analysis tool from RSeqR on all data
-
-```shell
-Rscript scripts/runRLFSAnalysis.R
-```
-
-2. Run the model-generation script (credit to Daniel Montemayor)
-
-```shell
-# Creates misc/rdata/model.rda
-Rscript buildModel.R
-```
-
-3. Use the new model/manifest to build the new `rmapdb_samples` table. 
-
-```shell
-# Creates misc/rdata/rmapdb_samples.rda
-Rscript buildRMapDBSamples.R  
-```
-
-4. Build the new RMapDB table and peaks to build the `rmapdb_genfeat` table.
-
-```shell
-# Creates misc/rdata/rmapdb_genfeat.rda
-Rscript buildRMapDBGenFeat.R  
-```
-
-5. Use new RMapDB samps table to build the new `rloop_regions` table
-
-```shell
-# Creates misc/rdata/rloop_regions.rda
-Rscript buidRLoopRegiones.R
-```
-
-6. Use preceding to build the new `rloop_signal` table
-
-```shell
-# Creates misc/rdata/rloop_signal.rda
-Rscript buildRloopSignal.R
-```
-
-7. Build the new `gene_expression` table. 
+2. Build the new `gene_expression` table. 
 
 ```shell
 # Creates misc/rdata/gene_expression.rda
 Rscript buildGeneExpression.R
 ```
 
-8. Update the data in the RSeqR package and rebuild RSeqR
+3. Build the new correlation matrix. 
 
-```shell
-cp -rf misc/rdata ../RSeqR/data/
-R CMD build ../RSeqR
-```
+4. Update RLSeq with new data
 
-### Generate reports, upload, and clean up
+5. Generate reports
 
-1. Rerun RSeqCLI to generate the reports using the latest RSeqR version
 
-```shell
-RSeqCLI run rmap-data/rmap/ --bwamem2 -t 44
-```
 
-2. Generate the new R-loops bigWig/bed file
+4. Build the SQL database (optional)
 
-```shell
-# Creates misc/rloop_regions.bw & misc/rloop_regions.bed
-Rscript buildRLRegions.bw.R
-```
 
-3. Generate data dump
 
-```shell
-# Creates misc/rmapdb_peaks.tar.xz & misc/rmapdb_coverage.tar.xz & misc/rmapdb_reports.tar.xz
-Rscript makeDataDumps.R
-```
 
-4. Upload data to AWS 
 
-```shell
-aws s3 sync rmap-data/report/data/ s3://rmapdb-data/report/data/
-aws s3 sync rmap-data/report/html/ s3://rmapdb-data/report/html/
-aws s3 sync misc/ s3://rmapdb-data/misc/
-```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

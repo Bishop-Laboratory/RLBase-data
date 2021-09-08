@@ -5,9 +5,11 @@
 
 library(tidyverse)
 library(magrittr)
+library(pbapply)
+pbo <- pboptions(type="txt") 
 
 # Magic
-MANIFEST <- "rlbase-data/rlbase_manifest_final.tsv"
+MANIFEST <- "rlbase-data/rlbase_samples.tsv"
 PEAKSORIG <- "rlbase-data/rlpipes-out/peaks/"
 NUM_SELECT <- 5000
 PCUTOFF <- 1.3
@@ -44,10 +46,14 @@ nPeaks <- peaks %>%
   select(experiment) %>%
   mutate(numPeaks = {{ lens }})
 manifest <- left_join(manifest, nPeaks, by = "experiment") 
-manifest <- unique(manifest)
-
-# Write the manifest
+if ("run" %in% colnames(manifest)) {
+  manifest <- unique(select(manifest, -run))
+}
+# Force unique experiment
+manifest <- manifest %>%
+  distinct(experiment, .keep_all = TRUE) 
 write_tsv(manifest, file = MANIFEST)
+
 
 # Get the final peakset for R-loop consensus
 samplesForConsensus <- manifest %>%
@@ -65,7 +71,7 @@ consSamp <- samplesForConsensus %>%
   dplyr::mutate(peak = paste0(PEAKSORIG, experiment, "_hg38.broadPeak")) %>%
   dplyr::filter(file.exists(peak)) %T>% {
     pull(., experiment) %>%
-      sapply(function(x) {
+      pbsapply(function(x) {
         system(paste0("awk '$9>", PCUTOFF, "' ",paste0(PEAKSORIG, x, "_hg38.broadPeak"), 
                       ' | shuf -n ', NUM_SELECT, 
                       " > ", RLFINDIR, x, "_hg38.broadPeak"))
@@ -82,7 +88,7 @@ hg38Mani <- manifest %>%
   dplyr::mutate(peak = paste0(PEAKSORIG, experiment, "_hg38.broadPeak")) %>%
   dplyr::filter(file.exists(peak)) %T>% {
     pull(., experiment) %>%
-      sapply(function(x) {
+      pbsapply(function(x) {
         system(paste0('cp ', paste0(PEAKSORIG, x, "_hg38.broadPeak "), 
                       RL38DIR, x, "_hg38.broadPeak"))
       })

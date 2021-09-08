@@ -11,6 +11,7 @@ R-package/run_vars.json
 RSeq_out*
 *.fastq
 *.bam
+**/rlbase-data/**/*.tsv
 *.bw
 *.bedGraph
 venv/

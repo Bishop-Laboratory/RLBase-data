@@ -8,7 +8,7 @@ import pandas as pd
 
 # Final outputs
 outputs = expand("rlregions/rlregions_{group}{ext}", group=['All', 'S96', 'dRNH'], ext=[
-  '.narrowPeak', '.bw', '.tsv', '_signal.tsv', ".bed"
+  '.narrowPeak', '.bw', '.csv', '_signal.tsv', ".bed"
 ])
 
 ########################################################################################################################
@@ -22,7 +22,7 @@ def get_minol(wildcards):
   Chosen based on running macs3 bdgpeakcall with --cutoff-analysis
   """
   lns = pd.read_csv("rlregions/rlregion_manifest_" + wildcards.group + ".csv")
-  res = math.ceil(lns.shape[0] * 0.20)
+  res = math.ceil(lns.shape[0] * 0.15)
   if res < 5:
     res = 5
   return res
@@ -42,10 +42,14 @@ rule clean_rlregions:
     rl="rlregions/hg38_manifest_{group}.csv",
     np="rlregions/rlregions_{group}.narrowPeak"
   output: 
-    tsv="rlregions/rlregions_{group}.tsv",
+    csv="rlregions/rlregions_{group}.csv",
     bed="rlregions/rlregions_{group}.bed",
-    sigtsv="rlregions/rlregions_{group}_signal.tsv"
-  script: "scripts/finalizeRLRegions.R"
+    sigtsv="rlregions/rlregions_{group}_signal.tsv",
+    tbl="misc/rlregions_{group}_table.tsv"
+  params:
+    manifest=config['manifest'],
+    blacklist=config['blacklist']
+  script: "finalizeRLRegions.R"
 
 
 rule callpeak_from_bdg:
@@ -56,7 +60,7 @@ rule callpeak_from_bdg:
   params:
     minol=get_minol
   shell: """
-    macs3 bdgpeakcall -c {params.minol} -i {input} -o {output}
+    macs3 bdgpeakcall -g 1000 -c {params.minol} -i {input} -o {output}
   """
 
 rule toBigWig:

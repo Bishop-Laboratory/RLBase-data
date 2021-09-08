@@ -1,10 +1,12 @@
 #' This script uses RLSeq to classify R-loop-mapping samples
-
 library(RLSeq)
 library(tidyverse)
+library(pbapply)
+pbo <- pboptions(type="txt") 
 
 # Magic
-MANIFEST <- "rlbase-data/rlbase_manifest_final.tsv"
+MANIFEST <- "rlbase-data/rlpipes-out/config.tsv"
+MANIFEST_FINAL <- "rlbase-data/rlbase_samples.tsv"
 RLFSRDA <- "rlbase-data/misc/rlfsRes.rda"
 TODISCARD <- "misc-data/todiscard.rda"
 
@@ -30,6 +32,7 @@ manifest <- left_join(manifest,
                         experiment = names(verd),
                         verdict = verd
                       )) %>%
-  mutate(discarded = experiment %in% discard)
+  mutate(discarded = experiment %in% discard) %>%
+  filter((mode == "RNA-Seq" & is.na(verdict)) | mode != "RNA-Seq")
 
-readr::write_tsv(manifest, MANIFEST)
+readr::write_tsv(manifest, MANIFEST_FINAL)

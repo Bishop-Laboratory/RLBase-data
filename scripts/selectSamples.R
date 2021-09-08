@@ -8,7 +8,6 @@ library(ggprism)
 
 # Magic
 RLFSRDAFILE <- "rlbase-data/misc/rlfsRes.rda"
-MANIFEST_FINAL <- "rlbase-data/rlbase_manifest_final.tsv"
 
 # Load all previously-selected samples 
 # This ensures selections are saved even if session ends

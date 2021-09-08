@@ -4,7 +4,7 @@ library(tidyverse)
 
 # Magic
 RLFSRDAFILE <- "rlbase-data/misc/rlfsRes.rda"
-MANIFEST_FINAL <- "rlbase-data/rlbase_manifest_final.tsv"
+MANIFEST_FINAL <- "rlbase-data/rlpipes-out/config.tsv"
 TODISCARD <- 'misc-data/todiscard.rda'
 RLFSDIR <- "rlbase-data/rlpipes-out/rlfs_rda/"
 
