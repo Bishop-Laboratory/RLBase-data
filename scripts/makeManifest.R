@@ -1,11 +1,17 @@
 suppressPackageStartupMessages(library(tidyverse))
 
+
 # Get args
 args <- commandArgs(trailingOnly = TRUE)
 
 # Location of the catalog excel file
-CATALOG=args[1]
+if (! interactive()) {
+  CATALOG <- args[1]
+} else {
+  CATALOG <- "rlbase-data/rlbase_catalog.xlsx"
+}
 message(CATALOG)
+
 
 # Make the output dir
 dir.create("rlbase-data/", showWarnings = FALSE)
@@ -14,11 +20,6 @@ dir.create("rlbase-data/", showWarnings = FALSE)
 catalog <- readxl::read_excel(CATALOG, sheet = "catalog")
 condition_map <- readxl::read_excel(CATALOG, sheet = "condition_map")
 modes <- readxl::read_excel(CATALOG, sheet = "modes")
-
-# Modes that will not be built currently due to limitations in the pipeline
-unbuildable <- modes %>%
-  filter(bisulfite_seq) %>%
-  pull(mode)
 
 # Group samples
 catalogGrouped <- catalog %>%
@@ -30,8 +31,9 @@ catalogGrouped <- catalog %>%
 
 # Get the manifest for RMap
 toBuild <- catalogGrouped %>%
+  left_join(select(modes, -PMID), by = "mode") %>%
   filter(group != "other",
-         ! mode %in%  unbuildable) %>%
+         ! bisulfite_seq | mode == "RNA-Seq") %>%
   unique() 
 
 # Write csv

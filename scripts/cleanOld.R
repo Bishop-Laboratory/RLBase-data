@@ -22,9 +22,12 @@ srxToRedo <- config %>%
   filter(experiment_original %in% redo | experiment %in% redo) %>%
   pull(experiment)
 
-# Delete all entries pertaining to these samples
-fls <- list.files("rlbase-data/rlpipes-out/", full.names = TRUE, recursive = TRUE, pattern = srxToRedo)
-sapply(fls, file.remove)
+if (length(srxToRedo) > 0) {
+  # Delete all entries pertaining to these samples
+  fls <- list.files("rlbase-data/rlpipes-out/", full.names = TRUE, recursive = TRUE, pattern = srxToRedo)
+  sapply(fls, file.remove)
+}
+
 
 # Echo out
 message("\nDone\n")

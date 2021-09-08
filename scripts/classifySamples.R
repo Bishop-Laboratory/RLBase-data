@@ -3,29 +3,33 @@
 library(RLSeq)
 library(tidyverse)
 
+# Magic
+MANIFEST <- "rlbase-data/rlbase_manifest_final.tsv"
+RLFSRDA <- "rlbase-data/misc/rlfsRes.rda"
+TODISCARD <- "misc-data/todiscard.rda"
+
 # Load the rlfsRes
-load("rlbase-data/misc/rlfsRes.rda")
+load(RLFSRDA)
 
 # Load the difficult-to-classify ones
-load("misc-data/todiscard.rda")
+load(TODISCARD)
 
 # Get the predictions
-pred <- lapply(rlfsRes, predictCondition)
+pred <- pbapply::pblapply(rlfsRes, predictCondition)
 
 # Extract label predicted
 verd <- sapply(pred, purrr::pluck, "Verdict")
 
 # Combine results with sample data
-manifest <- readr::read_tsv("rlbase-data/rlbase_manifest_final.tsv")
+manifest <- readr::read_tsv(MANIFEST)
+if ("verdict" %in% colnames(manifest)) {
+  manifest <- select(manifest, -verdict)
+}
 manifest <- left_join(manifest, 
                       tibble(
                         experiment = names(verd),
                         verdict = verd
-                      ))
+                      )) %>%
+  mutate(discarded = experiment %in% discard)
 
-manifest %>%
-  filter(! is.na(verdict)) %>%
-  select(experiment, mode, condition, lab, tissue, verdict) %>%
-  mutate(outlier = experiment %in% discard) %>%
-  View()
-
+readr::write_tsv(manifest, MANIFEST)

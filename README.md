@@ -126,10 +126,10 @@ RLPipes build $RLPIPESOUT $MANIFEST
 cp $RLPIPESOUT/config.tsv $RLPIPESOUT/config.save.tsv
 ```
 
-4. Fix any genomes which are mislabeled
+4. Wrangle the config (fix genomes and add condition types)
 
 ```shell
-Rscript scripts/fixGenomes.R $CATALOG $RLPIPESOUT/config.tsv
+Rscript scripts/wrangleConfig.R $CATALOG $RLPIPESOUT/config.tsv
 ```
 
 5. Remove any datasets which have to be re-run
@@ -205,48 +205,94 @@ REMOTEDIR="RMapDB-Archive/"
 lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
 ```
 
-## Build discriminator model
-
-1. Calculate RLFS enrichment for each sample
+13. Calculate RLFS enrichment for each sample
 
 ```shell
 CORES=44
 Rscript scripts/rlfsAnalyze.R $RLPIPESOUT/peaks $RLPIPESOUT/rlfs_rda $CORES
 ```
 
-2. Upload to AWS
+14. Upload to AWS
 
 ```shell
 aws s3 sync $RLPIPESOUT/rlfs_rda/ s3://rlbase-data/rlfs_rda/
 ```
 
-3. Get the samples for model buidling
+## Build discriminator model
+
+0. If you didn't do the above, then download the data needed for this:
 
 ```shell
-CONFIG="rlbase-data/rlpipes-out/config.tsv"
+RLPIPESOUT="rlbase-data/rlpipes-out/"
+aws s3 sync s3://rlbase-data/peaks/ $RLPIPESOUT/peaks/ 
+aws s3 sync s3://rlbase-data/rlfs_rda/ $RLPIPESOUT/rlfs_rda/ 
+aws s3 sync s3://rlbase-data/quant/ $RLPIPESOUT/quant/ 
+aws s3 sync s3://rlbase-data/coverage/ $RLPIPESOUT/coverage/ 
+aws s3 sync s3://rlbase-data/fastq_stats/ $RLPIPESOUT/fastq_stats/ 
+aws s3 sync s3://rlbase-data/bam_stats/ $RLPIPESOUT/bam_stats/ 
+```
+
+
+1. Get the samples for model buidling
+
+TODO: NEED TO Add condition key for NEG, POS, NULL
+TODO: Need to highlight the new samples and have another column previously determined vs new
+TODO: Need a reference for judging whether to discard -- show the ideals
+TODO: Maybe use a PCA instead of the fourier transform graph
+TODO: Maybe take out the annotation filter
+
+```shell
+CONFIG=$RLPIPESOUT/config.tsv
+CATALOG="rlbase-data/rlbase_catalog.xlsx"
 HOST="0.0.0.0"
 PORT=4848
 Rscript scripts/selectSamples.R $CONFIG $HOST $PORT
 ```
 
-4. Then build the model
+2. Then build the model
 
 ```shell
 Rscript scripts/buildModel.R
 ```
 
-5. Re-build RLSeq with new data
+3. Re-build RLSeq with new data
 
 ```shell
-cp misc-data/FFTModel.rda ../RLSeq/data/
+cp misc-data/fftModel.rda ../RLSeq/data/
 cp misc-data/prepFeatures.rda ../RLSeq/data/
 R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
 ```
 
-6. Classify samples
+4. Classify samples
 
 ```shell
-Rscript script/classifySamples.R
+Rscript scripts/classifySamples.R
+```
+
+## Get R-loop consensus
+
+1. Build the annotation table
+
+```shell
+CORES=44
+PEAKS=$RLPIPESOUT/peaks
+OUTANNO="rlbase-data/misc/annotatedPeaks.tsv"
+Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
+```
+
+2. Select final peakset
+
+```shell
+Rscript scripts/prepareConsensus.R
+```
+
+3. Run the R-loop consensus pipeline
+
+```shell
+CORES=44
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --dryrun  # Verify
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --dag | dot -Tpng > misc-data/rlregions.png  # DAG
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES # Run it
 ```
 
 

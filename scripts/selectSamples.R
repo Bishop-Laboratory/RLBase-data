@@ -32,44 +32,8 @@ if (! interactive()) {
 # Get RLFS data
 load(RLFSRDAFILE)
 
-if (! file.exists(MANIFEST_FINAL)) {
-  # Get the manifest
-  manifest <- read_tsv(configtsv) 
-  if ("condType" %in% colnames(manifest)) {
-    manifest <- manifest %>%
-      select(-condType)
-  }
-  
-  # Get the condition type added in -- write the final manifest
-  getCondType <- function(mode, condition, condition_map) {
-    modeLgl <- map_lgl(condition_map$Mode, function(x) {
-      grepl(mode, pattern = x)
-    }) & condition == condition_map$Condition
-    res <- condition_map[modeLgl,] %>%
-      pivot_longer(cols = c("POS", "NEG", "NULL")) %>%
-      filter(value) %>%
-      pull(name)
-    if (mode == "RNA-Seq") {
-      res <- NA
-    }
-    return(res)
-  }
-  condTbl <- manifest %>% filter(group == "rl")
-  condTbl$conds <- map_chr(seq(condTbl$experiment), function(i) {
-    message(i , " / ", length(seq(condTbl$experiment)))
-    mode <- condTbl$mode[i]
-    condition <- condTbl$condition[i]
-    getCondType(mode, condition, condition_map = condition_map)
-  })
-  manifest <- condTbl %>%
-    select(experiment, condType=conds) %>%
-    right_join(manifest, by = "experiment") %>%
-    unique()
-  write_tsv(manifest, file = MANIFEST_FINAL)
-} else {
-  manifest <- read_tsv(MANIFEST_FINAL)
-}
-
+# Get the manifest
+manifest <- read_tsv(configtsv) 
 
 # Wrangle for display
 toDT <- manifest %>% 
