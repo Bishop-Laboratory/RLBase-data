@@ -238,6 +238,7 @@ genes <- EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86 %>%
                 "GENESEQEND", "SEQSTRAND")
   ) %>% 
   dplyr::select(
+    geneid = GENEID,
     symbol = SYMBOL,
     chrom = SEQNAME,
     start = GENESEQSTART,
@@ -263,7 +264,7 @@ rlregionsSplit <- rlregions %>%
 
 # Intersect
 geneol <- valr::bed_intersect(rlregionsSplit, genes) %>%
-  dplyr::select(rlregion=rlregion.x, allGenes=symbol.y)
+  dplyr::select(rlregion=rlregion.x, geneIDs=geneid.y, allGenes=symbol.y)
 
 # Get commonly-annotated genes from pathway databases
 mainGeneVec <- pblapply(
@@ -284,6 +285,7 @@ geneol <- geneol %>%
     rlregion
   ) %>%
   mutate(
+    geneIDs = paste0(geneIDs, collapse = ","),
     allGenes = paste0(allGenes, collapse = ","),
     mainGenes = paste0(mainGenes[mainGenes != ""], collapse = ",")
   ) %>%
@@ -291,10 +293,13 @@ geneol <- geneol %>%
   distinct(rlregion, .keep_all = TRUE)
 
 # Add back to main table
+if ("mainGenes" %in% colnames(rlregions)) {
+  rlregions <- select(rlregions, -contains("gene"))
+}
 rlregions <- left_join(
   rlregions, geneol, by = "rlregion"
 ) %>%
-  mutate(across(contains("Genes"), function(x) {
+  mutate(across(contains("gene"), function(x) {
     ifelse(is.na(x), "", x)
   })) 
 

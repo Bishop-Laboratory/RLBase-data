@@ -2,6 +2,8 @@
 
 library(RLSeq)
 library(tidyverse)
+library(pbapply)
+pbo <- pboptions(type="txt") 
 
 if (! interactive()) {
   # Get args
@@ -17,6 +19,8 @@ if (! interactive()) {
   OUTANNO <- "rlbase-data/misc/annotatedPeaks.tsv"
 }
 
+# Get cluster
+clust <- parallel::makeCluster(CORES, type="SOCK")
 
 # Get peaks
 peaks <- list.files(PEAK_LOC, pattern = "hg38\\.broadPeak|mm10\\.broadPeak", full.names = TRUE)
@@ -28,14 +32,15 @@ peaks <- tibble(
 )
 
 # Run annotations
-resAnno <- parallel::mclapply(seq(peaks$experiment), function(i) {
+resAnno <- pblapply(seq(peaks$experiment), function(i, peaks) {
+  library(dplyr)
   message(i, " / ", length(peaks$experiment))
   peak <- peaks$peakfile[i] %>%
     regioneR::toGRanges()
   
   anno <- RLSeq::featureEnrich(peak, genome = peaks$genome[i]) %>%
     mutate(experiment = peaks$experiment[i])
-}, mc.cores = CORES) %>%
+}, cl = clust, peaks=peaks) %>%
   bind_rows() 
 stopifnot(nrow(resAnno) > 10)
 save(resAnno,

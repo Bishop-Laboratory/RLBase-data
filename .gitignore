@@ -12,6 +12,7 @@ RSeq_out*
 *.fastq
 *.bam
 **/rlbase-data/**/*.tsv
+**/rlbase-data/**/*.csv
 *.bw
 *.bedGraph
 venv/

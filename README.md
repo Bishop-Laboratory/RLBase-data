@@ -227,6 +227,7 @@ RLPIPESOUT="rlbase-data/rlpipes-out/"
 aws s3 sync s3://rlbase-data/peaks/ $RLPIPESOUT/peaks/ 
 aws s3 sync s3://rlbase-data/rlfs_rda/ $RLPIPESOUT/rlfs_rda/ 
 aws s3 sync s3://rlbase-data/quant/ $RLPIPESOUT/quant/ 
+cd $RLPIPESOUT/quant/ && find . -name "*.tar.xz" -exec tar -xJf {} \; && cd $RLBASEDIR
 aws s3 sync s3://rlbase-data/coverage/ $RLPIPESOUT/coverage/ 
 aws s3 sync s3://rlbase-data/fastq_stats/ $RLPIPESOUT/fastq_stats/ 
 aws s3 sync s3://rlbase-data/bam_stats/ $RLPIPESOUT/bam_stats/ 
@@ -301,8 +302,18 @@ Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
 2. Build the new `gene_expression` table. 
 
 ```shell
-# Creates misc/rdata/gene_expression.rda
-Rscript buildGeneExpression.R
+# Creates misc/gene_expression.rda
+MANIFEST="rlbase-data/rlbase_samples.tsv"
+GENE_EXP_TABLE="rlbase-data/misc/gene_expression.csv"
+QUANTDIR="rlbase-data/rlpipes-out/quant/"
+Rscript scripts/buildExpression.R $
+```
+
+3. Get the genomic feature -> rlregion mapping
+
+```shell
+# Creates misc/rlregion_features.rda
+Rscript scripts/rlregionsToFeatures.R
 ```
 
 3. Build the new correlation matrix. 
