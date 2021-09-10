@@ -17,7 +17,14 @@ git clone https://github.com/Bishop-Laboratory/RLSeq.git
 2. Create the environment
 
 ```shell
-cd RLBase-data/
+cd RLBase-data/misc-data/
+git clone https://github.com/srhartono/SkewR.git
+wget https://github.com/KorfLab/StochHMM/archive/refs/tags/v0.38.tar.gz
+tar -xvzf v0.38.tar.gz
+cd StochHMM-0.38/
+./configure
+make
+cd ../
 RLBASEDIR=$(pwd)
 conda install -c conda-forge mamba -y
 mamba env create -f env.yml --force
@@ -91,6 +98,12 @@ Rscript scripts/makeRLFSBeds.R 1 FALSE
 ```shell
 CORES=40  # Number of cores for parallel operations
 Rscript scripts/makeRLFSBeds.R $CORES TRUE
+```
+
+4. Generate SkewR tracks
+
+```shell
+
 ```
 
 4. (optional) Upload the results to AWS (Requires admin privileges)
@@ -290,7 +303,22 @@ snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --config manifest=$M
 
 ## Other
 
-1. Build the annotation table (genomic features and genes)
+1. Compile genomic features
+
+```shell
+Rscript scripts/getGenomicFeatures.R
+```
+
+2. Run SkewR to build G or C skew (optional)
+
+```shell
+cd misc-data/SkewR/
+CORES=20  # This should be set lower due to high memory requirements per thread
+perl bin/RunGC-SKEW.pl -s ~/.rlseq_genomes/hg38/hg38.fa -m model/GC_SKEW_7600.hmm -g ~/.rlseq_genomes/hg38/hg38.ensGene.bed -b ~/.rlseq_genomes/hg38/hg38.cpg.bed -o skewr_res -z $CORES
+cp skewr_res/probBedFile.bed ../g_or_c_skew.hg38.bed
+```
+
+3. Annotate peaks (genomic features and genes)
 
 ```shell
 CORES=44
@@ -299,14 +327,14 @@ OUTANNO="rlbase-data/misc/annotatedPeaks.tsv"
 Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
 ```
 
-2. Build the new `gene_expression` table. 
+2. Build the new `gene_expression` table and calculate correlations. 
 
 ```shell
 # Creates misc/gene_expression.rda
 MANIFEST="rlbase-data/rlbase_samples.tsv"
 GENE_EXP_TABLE="rlbase-data/misc/gene_expression.csv"
 QUANTDIR="rlbase-data/rlpipes-out/quant/"
-Rscript scripts/buildExpression.R $
+Rscript scripts/buildExpression.R $QUANTDIR $GENE_EXP_TABLE $MANIFEST
 ```
 
 3. Get the genomic feature -> rlregion mapping
@@ -318,9 +346,11 @@ Rscript scripts/rlregionsToFeatures.R
 
 3. Build the new correlation matrix. 
 
-4. Update RLSeq with new data
+4. Build tables for DB
 
-5. Generate reports
+5. Update RLSeq with new data
+
+6. Generate reports
 
 
 

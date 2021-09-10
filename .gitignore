@@ -20,6 +20,9 @@ analysis/
 *data/rlfs*
 bin/RSeq/uploads/
 *.Rhistory*
+misc-data/
+*.bed
+*.bed.gz
 **/quant/**
 misc/export
 *.pyc
