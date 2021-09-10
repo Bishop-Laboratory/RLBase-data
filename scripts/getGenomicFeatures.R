@@ -1,200 +1,284 @@
 library(tidyverse)
 library(rtracklayer)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
 library(parallel)
 library(pbapply)
 pbo <- pboptions(type="txt") 
 
 dir.create("misc-data/annotations", showWarnings = FALSE)
 
-# ### Get genomic features from UCSC ###
+### Get genomic features from UCSC ###
+
+# Get the additional tables from UCSC
+# "typeNow" indicates no column to stratify by
+tablesToUse <- data.frame(
+  row.names = c("table", "typeCol"),
+  "CpG_Islands"= c("cpgIslandExt", "typeNow"),
+  "Centromeres" = c("centromeres", "typeNow"),
+  "Encode_CREs" = c("encodeCcreCombined", "ucscLabel"),
+  "knownGene_RNAs" = c("knownGene", "transcriptType"),
+  "Microsatellite" = c("microsat", "typeNow"),
+  "Repeat_Masker" = c("rmsk", "repClass"),
+  "Splice_Events" = c("knownAlt", "name"),
+  "snoRNA_miRNA_scaRNA" = c("wgRna", "type"),
+  "tRNAs" = c("tRNAs", "typeNow"),
+  "CNA" = c("coriellDelDup", "CN_State"),
+  "PolyA" = c("wgEncodeGencodePolyaV38", "name2")
+) %>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "group") %>%
+  as_tibble()
+
+# Only human for now
+# Get the genes in a list
+# TODO: Need to remove LRGs from all ENsDB
+# TODO: Need to choose genes from MSigDB based off the ens gene ID, not symbols...
+# TODO: Need to use the GTF files instead of the EnsDB packages
+genomes <- list("hg38" = GenomicFeatures::makeTxDbFromUCSC(genome = "hg38"),
+                "mm10" = GenomicFeatures::makeTxDbFromUCSC(genome = "mm10"))
+
+# For each genome, retrieve all annotations
+annotationLst <- lapply(names(genomes), function(genome) {
+  
+  message(genome)
+  
+  # Get the tables from UCSC ** LONG TUNNING
+  message("Getting tables from UCSC...")
+  dir.create("tmp", showWarnings = FALSE)
+  TMPFILE <- paste0("tmp/tabLst_", genome, ".rda")
+  # Get the tables from UCSC ** LONG TUNNING
+  tabLst <- pblapply(
+    pull(tablesToUse, table), function(tabNow, genome) {
+      library(magrittr)
+      message(tabNow)
+      try(
+        rtracklayer::ucscTableQuery(x=genome, table = tabNow) %>%
+          rtracklayer::getTable()
+      ) 
+    },
+    genome=genome
+  )
+  
+  # Remove any which are not available
+  message("Wrangling...")
+  errors <- sapply(tabLst, function(x) {
+    class(x) == "try-error"
+  })
+  tabNow <- tablesToUse
+  if (any(errors)) {
+    tabLst <- tabLst[-which(errors)]
+    tabNow <- tabNow[-which(errors),]
+  }
+  names(tabLst) <- pull(tabNow, group)
+  
+  # Add the type information
+  tabLst2 <- lapply(names(tabLst), function(nm) {
+    x <- tabLst[[nm]]
+    x$typeNow <- nm
+    x
+  })
+  names(tabLst2) <- names(tabLst)
+  
+  # Perform the group assignment and clean column names
+  tabDF <- lapply(names(tabLst2), function(nm) {
+    message(nm)
+    x <- tabLst2[[nm]]
+    tosplit <- tabNow %>%
+      dplyr::filter(group == !! nm) %>%
+      pull(typeCol)
+    
+    if (! "strand" %in% colnames(x)) {
+      x$strand <- "."
+    }
+    
+    x <- x %>%
+      as_tibble() %>%
+      dplyr::mutate(strand = case_when(strand == "." ~ "*",
+                                       TRUE ~ strand)) %>%
+      {
+        if (! tosplit %in% colnames(.)) { 
+          dplyr::mutate(., !!quo_name(tosplit) := typeNow) 
+        } else {
+          .
+        }
+      } %>%
+      dplyr::select(contains(c("chrom", "geno", "tx")) & ! contains(c("Left", "Starts", "Url")), 
+                    strand,
+                    group = !! tosplit,
+                    db = typeNow) 
+    
+    if ("genoName" %in% colnames(x)) {
+      x <- x %>% dplyr::rename(
+        chrom=genoName, chromStart = genoStart, chromEnd = genoEnd
+      )
+    } 
+    
+    if ("txStart" %in% colnames(x)) {
+      x <- x %>% dplyr::rename(
+        chromStart = txStart, chromEnd = txEnd
+      )
+    } 
+    x
+  }) %>% bind_rows()
+  
+  # Annotations to keep  
+  keepers <- table(tabDF$group) %>%
+    as.data.frame() %>%
+    filter(! Var1 %in% c("retained_intron", "processed_transcript", 
+                         "knownGene_RNAs", "Unknown", "Other",
+                         "LINE?", "DNA?", "RC?", "LTR?", "SINE?",
+                         "misc_RNA", "TEC", "enhancer")) %>%
+    pull(Var1)
+  
+  # Get the final annotations
+  tabDF2 <- tabDF %>%
+    dplyr::filter(group %in% keepers) %>%
+    dplyr::rename(seqnames = chrom, start = chromStart, end = chromEnd)
+  
+  # Get the TxDb annotations
+  message("Getting TxDb annotations...")
+  txdb <- genomes[[genome]]
+  # TODO: Clean this part up
+  fiveUTR <- GenomicFeatures::fiveUTRsByTranscript(txdb) %>%
+    unlist() %>%
+    as.data.frame(row.names = seq(names(.))) %>%
+    mutate(group = "fiveUTR") %>%
+    dplyr::select(seqnames, start, end , strand, group) %>% 
+    mutate(db="Transcript Features")
+  threeUTR <- GenomicFeatures::threeUTRsByTranscript(txdb) %>%
+    unlist() %>%
+    as.data.frame(row.names = seq(names(.))) %>%
+    mutate(group = "threeUTR") %>%
+    dplyr::select(seqnames, start, end, strand, group) %>% 
+    mutate(db="Transcript Features")
+  exon <- GenomicFeatures::tidyExons(txdb) %>%
+    as.data.frame() %>%
+    mutate(group = "Exon") %>%
+    dplyr::select(seqnames, start, end, strand, group) %>% 
+    mutate(db="Transcript Features") %>%
+    distinct()
+  intron <- GenomicFeatures::tidyIntrons(txdb) %>%
+    as.data.frame() %>%
+    mutate(group = "Intron") %>%
+    dplyr::select(seqnames, start, end, strand, group) %>% 
+    mutate(db="Transcript Features") %>%
+    distinct()
+  TSS <- GenomicFeatures::tidyTranscripts(txdb) %>%
+    as.data.frame() %>%
+    mutate(group = "TSS",
+           end = start + 1) %>%
+    dplyr::select(seqnames, start, end, strand, group) %>% 
+    mutate(db="Transcript Features") %>%
+    distinct()
+  TTS <- GenomicFeatures::tidyTranscripts(txdb) %>%
+    as.data.frame() %>%
+    mutate(group = "TTS",
+           start = end - 1) %>%
+    dplyr::select(seqnames, start, end, strand, group) %>% 
+    mutate(db="Transcript Features") %>%
+    distinct()
+  Intergenic <- GenomicFeatures::tidyTranscripts(txdb) %>%
+    gaps() %>%
+    as.data.frame() %>%
+    mutate(group = "Intergenic") %>%
+    dplyr::select(seqnames, start, end, strand, group) %>% 
+    mutate(db="Transcript Features") %>%
+    distinct()
+  genomicAnno <- bind_rows(list(
+    TSS, fiveUTR, exon, intron, threeUTR, TTS
+  ))
+  
+  # Add to the annotation table
+  message("Compiling...")
+  bind_rows(tabDF2, genomicAnno) %>%
+    dplyr::rename(type = group) %>%
+    dplyr::group_by(db) %>%
+    {setNames(group_split(.), group_keys(.)[[1]])} 
+  
+})
+names(annotationLst) <- names(genomes)  # Add names back
+
+### Get DNase and TFBS ###
+
+# DNase
+dnase <- read_tsv("http://hgdownload.cse.ucsc.edu/goldenpath/hg38/database/wgEncodeRegDnaseClustered.txt.gz",
+                  col_names = c("x", "chrom", "start", "end")) %>%
+  mutate(type = "DNaseHS", db=type, strand="*",) %>%
+  dplyr::select(chrom, start, end, strand, type, db)
+
+# TFBS
+tfbs <- read_tsv("http://hgdownload.cse.ucsc.edu/goldenpath/hg38/database/encRegTfbsClustered.txt.gz",
+                  col_names = c("x", "chrom", "start", "end", "type")) %>%
+  mutate(db="encodeTFBS", strand="*",) %>%
+  dplyr::select(chrom, start, end, strand, type, db)
+  
 # 
-# # This is in addition to those already obtained in the development of RLSeq
-# 
-# # Get genes
-# EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86 %>%
-#   AnnotationDbi::select(keys =  AnnotationDbi::keys(.),
-#                         columns = c("GENEID", "SEQNAME", "GENESEQSTART", 
-#                                     "GENESEQEND", "SEQSTRAND")) %>%
-#   mutate(
-#     strand = case_when(
-#       SEQSTRAND == 1 ~ "+",
-#       SEQSTRAND == -1 ~ "-",
-#       TRUE ~ "*"
-#     ),
-#     seqnames = paste0("chr", SEQNAME)
-#   ) %>%
-#   select(seqnames, start = GENESEQSTART, end = GENESEQEND, name = GENEID, strand) %>%
-#   GenomicRanges::makeGRangesFromDataFrame() %>%
-#   rtracklayer::export.bed(con = "~/.rseq_genomes/hg38/hg38.ensGene.bed")
-# 
-# # Get CpG islands
-# RLSeq::annotationLst$hg38$CpG_Islands %>%
-#   as.data.frame() %>%
-#   GenomicRanges::makeGRangesFromDataFrame() %>%
-#   rtracklayer::export.bed(con = "~/.rseq_genomes/hg38/hg38.cpg.bed")
-# 
-# # TODO: Add SkewR-predicted regions (or G/C-skew regions)
-# # See this ref https://www.ncbi.nlm.nih.gov/labs/pmc/articles/PMC6125637/
-# tablesToUse <- data.frame(
-#   row.names = c("table", "typeCol"),
-#   "CNA" = c("coriellDelDup", "CN_State"),
-#   "TFBSs" = c("encRegTfbsClustered", "name"),
-#   "PolyA" = c("wgEncodeGencodePolyaV38", "name2"),
-#   "DNAse" = c("wgEncodeRegDnaseClustered", "typeNow")
-# ) %>%
-#   t() %>%
-#   as.data.frame() %>%
-#   rownames_to_column(var = "group") %>%
-#   as_tibble()
-# 
-# # Only human for now
-# genome <- "hg38"
-# 
-# message(genome)
-# 
-# # Get the tables from UCSC ** LONG TUNNING
-# message("Getting tables from UCSC...")
-# tabLst <- pblapply(
-#   pull(tablesToUse, table), function(tabNow, genome) {
-#     library(magrittr)
-#     message(tabNow)
-#     rtracklayer::ucscTableQuery(x=genome, table = tabNow) %>%
-#       rtracklayer::getTable()
-#   }, 
-#   genome=genome
-# )
-# names(tabLst) <- pull(tablesToUse, group)
-# 
-# # Remove any which are not available
-# message("Wrangling...")
-# errors <- sapply(tabLst, function(x) {
-#   class(x) == "try-error"
-# })
-# if (any(errors)) {
-#   tabLst <- tabLst[-which(errors)]
-# }
-# 
-# # Add the type information
-# tabLst2 <- lapply(names(tabLst), function(nm) {
-#   x <- tabLst[[nm]]
-#   x$typeNow <- nm
-#   x
-# })
-# names(tabLst2) <- names(tabLst)
-# 
-# # Perform the group assignment and clean column names
-# tabDF <- lapply(names(tabLst2), function(nm) {
-#   message(nm)
-#   x <- tabLst2[[nm]]
-#   tosplit <- tablesToUse %>%
-#     dplyr::filter(group == !! nm) %>%
-#     pull(typeCol)
-#   
-#   if (! "strand" %in% colnames(x)) {
-#     x$strand <- "."
-#   }
-#   
-#   x <- x %>%
-#     as_tibble() %>%
-#     dplyr::mutate(strand = case_when(strand == "." ~ "*",
-#                                      TRUE ~ strand)) %>%
-#     {
-#       if (! tosplit %in% colnames(.)) { 
-#         dplyr::mutate(., !!quo_name(tosplit) := typeNow) 
-#       } else {
-#         .
-#       }
-#     } %>%
-#     dplyr::select(contains(c("chrom", "geno", "tx")) & ! contains(c("Left", "Starts", "Url")), 
-#                   strand,
-#                   group = !! tosplit,
-#                   DB = typeNow) 
-#   
-#   if ("genoName" %in% colnames(x)) {
-#     x <- x %>% dplyr::rename(
-#       chrom=genoName, chromStart = genoStart, chromEnd = genoEnd
-#     )
-#   } 
-#   
-#   if ("txStart" %in% colnames(x)) {
-#     x <- x %>% dplyr::rename(
-#       chromStart = txStart, chromEnd = txEnd
-#     )
-#   } 
-#   x
-# }) %>% bind_rows()
-# 
-# # Annotations to keep  
-# tabDF2 <- tabDF %>%
-#   dplyr::rename(seqnames = chrom, start = chromStart, end = chromEnd)
-# 
-# 
-# ### Get G4Q DNA ###
-# 
-# # Data was obtained from: https://doi.org/10.6084/m9.figshare.c.3498270.v1
-# # It contains predicted G4Q sites in bed files 
-# download.file(
-#   "https://figshare.com/ndownloader/files/6432597",
-#   destfile = "misc-data/G4Q.tar.gz"
-# )
-# untar("misc-data/G4Q.tar.gz", exdir = "misc-data/")
-# file.rename("misc-data/DATA/", "misc-data/G4Q")
-# 
-# ## Parse G4Q pred sites ##
-# # The cutoffs for labeling were determined adhoc from examintation of quantiles
-# # They attempt to bin the data such that interesting biology will be retained
-# # but dimensionality will be reduced.
-# # Refer to the paper for the meaning of the terms
-# # https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0165101
-# g4qpred <- read_tsv("misc-data/G4Q/hg38_QFS_ALL.txt", col_names = c("chrom", "loc", "G4Pred", "seq", "strand")) %>%
-#   mutate(
-#     start = as.numeric(gsub(loc, pattern = "(.+)-(.+)", replacement = "\\1")),
-#     end = as.numeric(gsub(loc, pattern = "(.+)-(.+)", replacement = "\\2")),
-#     tractlen = as.numeric(gsub(G4Pred, pattern = "(.+):(.+):(.+)", replacement = "\\1")),
-#     numloc = as.numeric(gsub(G4Pred, pattern = "(.+):(.+):(.+)", replacement = "\\2")),
-#     g4num = as.numeric(gsub(G4Pred, pattern = "(.+):(.+):(.+)", replacement = "\\3")),
-#     tractlen = case_when(
-#       tractlen > 12 ~ "13+",
-#       tractlen > 5 ~ "6-12",
-#       TRUE ~ "4-5"
-#     ),
-#     tractlen = paste0("tl:", tractlen),
-#     numloc = case_when(
-#       numloc > 9 ~ "10+",
-#       numloc > 2 ~ "3-9",
-#       TRUE ~ "1-2"
-#     ),
-#     numloc = paste0("nl:", numloc),
-#     g4num = case_when(
-#       g4num > 4 ~ "5+",
-#       g4num > 1 ~ "2-4",
-#       TRUE ~ "1"
-#     ),
-#     g4num = paste0("gn:", g4num),
-#     G4Pred = paste0("G4Pred__", tractlen, "_", numloc, "_", g4num)
-#   ) %>%
-#   dplyr::select(chrom, start, end, strand, G4Pred)
-# 
-# ## Get the experimentally-obtained G4Q datasets
-# plus <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE63nnn/GSE63874/suppl/GSE63874_Na_K_PDS_plus_hits_intersect.bed.gz"
-# minus <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE63nnn/GSE63874/suppl/GSE63874_Na_K_PDS_minus_hits_intersect.bed.gz"
-# g4qexpp <- read_tsv(plus, col_names = c("chrom", "start", "end")) %>% mutate(strand = "+")
-# g4qexpm <- read_tsv(minus, col_names = c("chrom", "start", "end")) %>% mutate(strand = "-")
-# g4qexp <- bind_rows(g4qexpp, g4qexpm) %>% mutate(type = "G4Q_PDS_NaK_GSE63874")
-# 
-# ## Save annotations
-# 
-# 
-# ### Get Transcription Factors Meta-Clusters from GTRD ###
-# AnnotationDbi::select(
-#   org.Hs.eg.db::org.Hs.eg.db
-# )
-# 
-# # Wrangle factor names into uniprot IDs
-# factorsToGet <- c("NFE2L2", "BRCA1", "BRCA2", "STAG2", "STAG1", "RAD23A", 
-#                   "SMC1A", "SLC3A2", "SLC7A11", "EZH2", "HDAC1", "HDAC2", "HDAC3",
-#                   "TEAD1", "CTCF", "SRSF2", "SRSF1", "U2AF1", "SF3B1", "DHX9")
-# 
+
+### Get G4Q DNA ###
+
+# Data was obtained from: https://doi.org/10.6084/m9.figshare.c.3498270.v1
+# It contains predicted G4Q sites in bed files
+download.file(
+  "https://figshare.com/ndownloader/files/6432597",
+  destfile = "misc-data/G4Q.tar.gz"
+)
+untar("misc-data/G4Q.tar.gz", exdir = "misc-data/")
+file.rename("misc-data/DATA/", "misc-data/G4Q")
+
+## Parse G4Q pred sites ##
+# The cutoffs for labeling were determined adhoc from examintation of quantiles
+# They attempt to bin the data such that interesting biology will be retained
+# but dimensionality will be reduced.
+# Refer to the paper for the meaning of the terms
+# https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0165101
+g4qpred <- read_tsv("misc-data/G4Q/hg38_QFS_ALL.txt", col_names = c("chrom", "loc", "G4Pred", "seq", "strand")) %>%
+  mutate(
+    start = as.numeric(gsub(loc, pattern = "(.+)-(.+)", replacement = "\\1")),
+    end = as.numeric(gsub(loc, pattern = "(.+)-(.+)", replacement = "\\2")),
+    tractlen = as.numeric(gsub(G4Pred, pattern = "(.+):(.+):(.+)", replacement = "\\1")),
+    numloc = as.numeric(gsub(G4Pred, pattern = "(.+):(.+):(.+)", replacement = "\\2")),
+    g4num = as.numeric(gsub(G4Pred, pattern = "(.+):(.+):(.+)", replacement = "\\3")),
+    tractlen = case_when(
+      tractlen > 12 ~ "13+",
+      tractlen > 5 ~ "6-12",
+      TRUE ~ "4-5"
+    ),
+    tractlen = paste0("tl:", tractlen),
+    numloc = case_when(
+      numloc > 9 ~ "10+",
+      numloc > 2 ~ "3-9",
+      TRUE ~ "1-2"
+    ),
+    numloc = paste0("nl:", numloc),
+    g4num = case_when(
+      g4num > 4 ~ "5+",
+      g4num > 1 ~ "2-4",
+      TRUE ~ "1"
+    ),
+    g4num = paste0("gn:", g4num),
+    G4Pred = paste0("G4Pred__", tractlen, "_", numloc, "_", g4num)
+  ) %>%
+  dplyr::select(chrom, start, end, strand, G4Pred)
+
+## Get the experimentally-obtained G4Q datasets
+plus <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE63nnn/GSE63874/suppl/GSE63874_Na_K_PDS_plus_hits_intersect.bed.gz"
+minus <- "https://ftp.ncbi.nlm.nih.gov/geo/series/GSE63nnn/GSE63874/suppl/GSE63874_Na_K_PDS_minus_hits_intersect.bed.gz"
+g4qexpp <- read_tsv(plus, col_names = c("chrom", "start", "end")) %>% mutate(strand = "+")
+g4qexpm <- read_tsv(minus, col_names = c("chrom", "start", "end")) %>% mutate(strand = "-")
+g4qexp <- bind_rows(g4qexpp, g4qexpm) %>% mutate(type = "G4Q_PDS_NaK_GSE63874")
+
+## Save annotations
+
+
+### Get Transcription Factors Meta-Clusters from GTRD ###
+
+# Wrangle factor names into uniprot IDs
+factorsToGet <- c("NFE2L2", "BRCA1", "BRCA2", "STAG2", "STAG1", "RAD23A",
+                  "SMC1A", "SLC3A2", "SLC7A11", "EZH2", "HDAC1", "HDAC2", "HDAC3",
+                  "TEAD1", "CTCF", "SRSF2", "SRSF1", "U2AF1", "SF3B1", "DHX9")
+
 
 
 ### Get annotations from other sources ###
@@ -350,14 +434,47 @@ pblapply(seq(histList), function(i) {
   
   downnames <- pbsapply(fls, function(fl) {
     downname <- paste0("tmp/", basename(fl))
-    download.file(fl, destfile = downname, quiet = TRUE)
-    system(paste0("gunzip ", downname))
+    if (! file.exists(gsub(downname, pattern =  "(.+)\\.gz", replacement =  "\\1"))) {
+      download.file(fl, destfile = downname, quiet = TRUE)
+      system(paste0("gunzip ", downname))
+    } else {
+      message("Already downloaded!")
+    }
     gsub(downname, pattern =  "(.+)\\.gz", replacement =  "\\1")
   }, cl = makeCluster(length(fls)))
-  
-  system(paste0("chipr -i ", paste0(downnames, collapse = " "), " -m 2 -o misc-data/annotations/", mark), wait = FALSE)
+  if (! file.exists(paste0("misc-data/annotations/", mark, "_optimal.bed"))) {
+    system(paste0("chipr -i ", paste0(downnames, collapse = " "), " -m 2 -o misc-data/annotations/", mark), wait = FALSE)
+  } else {
+    message("Already run!")
+  }
 })
 
+
+
+### Get SkewR annotations ###
+
+# Get genes
+EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86 %>%
+  AnnotationDbi::select(keys =  AnnotationDbi::keys(.),
+                        columns = c("GENEID", "SEQNAME", "GENESEQSTART",
+                                    "GENESEQEND", "SEQSTRAND")) %>%
+  mutate(
+    strand = case_when(
+      SEQSTRAND == 1 ~ "+",
+      SEQSTRAND == -1 ~ "-",
+      TRUE ~ "*"
+    ),
+    seqnames = paste0("chr", SEQNAME)
+  ) %>%
+  select(seqnames, start = GENESEQSTART, end = GENESEQEND, name = GENEID, strand) %>%
+  GenomicRanges::makeGRangesFromDataFrame() %>%
+  rtracklayer::export.bed(con = "~/.rseq_genomes/hg38/hg38.ensGene.bed")
+
+# Get CpG islands
+annotationLst$hg38$CpG_Islands %>%
+  as.data.frame() %>%
+  GenomicRanges::makeGRangesFromDataFrame() %>%
+  rtracklayer::export.bed(con = "~/.rseq_genomes/hg38/hg38.cpg.bed")
 
 
 ### Save annotations ###
