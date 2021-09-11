@@ -26,6 +26,7 @@ cd StochHMM-0.38/
 make
 cd ../
 RLBASEDIR=$(pwd)
+export PATH="$RLBASEDIR/misc-data/StochHMM-0.38/:$PATH" 
 conda install -c conda-forge mamba -y
 mamba env create -f env.yml --force
 conda activate rlbaseData
@@ -103,7 +104,8 @@ Rscript scripts/makeRLFSBeds.R $CORES TRUE
 4. Generate SkewR tracks
 
 ```shell
-
+cd misc-data/SkewR/
+perl bin/RunGC-SKEW.pl -s ~/.rseq_genomes/hg38/hg38.fa -m model/GC_SKEW_7600.hmm -g ~/.rseq_genomes/hg38/hg38.ensGene.bed -b ~/.rseq_genomes/hg38/hg38.cpg.bed -o skewr_res_hg38 -z 20
 ```
 
 4. (optional) Upload the results to AWS (Requires admin privileges)
@@ -303,22 +305,26 @@ snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --config manifest=$M
 
 ## Other
 
+0. Download the cohesin peaks
+
+```shell
+aws s3 sync s3://rlbase-data/misc/cohesin_peaks/ misc-data/cohesin_peaks/ 
+```
+
 1. Compile genomic features
 
 ```shell
-Rscript scripts/getGenomicFeatures.R
+CORES=15  # Set low due to high memory consumption per thread
+Rscript scripts/getGenomicFeatures.R $CORES
 ```
 
-2. Run SkewR to build G or C skew (optional)
+2. Upload to AWS (Optional)
 
 ```shell
-cd misc-data/SkewR/
-CORES=20  # This should be set lower due to high memory requirements per thread
-perl bin/RunGC-SKEW.pl -s ~/.rlseq_genomes/hg38/hg38.fa -m model/GC_SKEW_7600.hmm -g ~/.rlseq_genomes/hg38/hg38.ensGene.bed -b ~/.rlseq_genomes/hg38/hg38.cpg.bed -o skewr_res -z $CORES
-cp skewr_res/probBedFile.bed ../g_or_c_skew.hg38.bed
+aws s3 sync misc-data/annotations/ s3://rlbase-data/misc/annotations/ 
 ```
 
-3. Annotate peaks (genomic features and genes)
+2. Annotate peaks (genomic features and genes)
 
 ```shell
 CORES=44
