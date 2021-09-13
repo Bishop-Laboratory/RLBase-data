@@ -24,7 +24,7 @@ rlrs <- lapply(opts, function(opt) {
   gpat <- "(.+):(.+)\\-(.+):(.+)"
   
   # Wrangle granges from rlregions table
-  gr <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv") %>%
+  gr <- paste0("rlregions_", opt, "_table.tsv.xz") %>%
     read_tsv(show_col_types = FALSE, progress = FALSE) %>%
     filter(! is_repeat) %>%
     select(rlregion, location) %>%
