@@ -83,7 +83,8 @@ Prepare-RMapDB-Tables/**/*.tgz
 Prepare-RMapDB-Tables/**/quant/*
 Prepare-RMapDB-Tables/**/logs/*
 
-*.xz
+Prepare-RMapDB-Tables/
+rlbase-data/**/*.xz
 *.rda
 *stats.json
 *stats.txt
