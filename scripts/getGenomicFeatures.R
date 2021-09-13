@@ -598,14 +598,28 @@ annotationLst$mm10 <- c(as.list(annotationLst$mm10),
 
 # Write csv files
 dir.create('misc-data/annotations/', showWarnings = FALSE)
+list.files("misc-data/annotations/", 
+           recursive = TRUE, full.names = TRUE) %>%
+  file.remove()
 a_ <- lapply(names(genomes), function(genome) {
   message(genome)
   annoOut <- paste0("misc-data/annotations/", genome)
   dir.create(annoOut, showWarnings = FALSE)
   annoLstGen <- annotationLst[[genome]]
   pbsapply(names(annoLstGen), function(x) {
-    outname <- paste0(annoOut, "/", x, ".csv")
-    write_csv(annoLstGen[[x]], outname, progress = FALSE)
+    outname <- paste0(annoOut, "/",  gsub(x, pattern = " ", 
+                                          replacement = "_"), ".csv")
+    ds <- annoLstGen[[x]]
+    if ("seqnames" %in% colnames(ds)) {
+      ds <- dplyr::rename(ds, chrom = seqnames)
+    } 
+    ds %>%
+      mutate(db = gsub(db, pattern = " ", replacement = "_")) %>%
+      group_by(db, type) %>%
+      mutate(name = paste0(db, "__", type, "__", seq(chrom))) %>%
+      ungroup() %>%
+      dplyr::select(-type, -db) %>%
+      write_csv(outname, progress = FALSE)
   })
   return(NULL)
 })

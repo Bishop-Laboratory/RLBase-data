@@ -12,6 +12,7 @@ time, and it is not recommended without access to high-performance computing res
 git clone https://github.com/Bishop-Laboratory/RLBase-data.git
 git clone https://github.com/Bishop-Laboratory/RLPipes.git
 git clone https://github.com/Bishop-Laboratory/RLSeq.git
+git clone https://github.com/Bishop-Laboratory/RLHub.git
 ```
 
 2. Create the environment
@@ -272,6 +273,9 @@ Rscript scripts/buildModel.R
 
 3. Re-build RLSeq with new data
 
+**TODO**: This part needs to be for the ExperimentHub approach such that the model
+is not stored in the RLSeq package.
+
 ```shell
 cp misc-data/fftModel.rda ../RLSeq/data/
 cp misc-data/prepFeatures.rda ../RLSeq/data/
@@ -316,15 +320,10 @@ aws s3 sync s3://rlbase-data/misc/cohesin_peaks/ misc-data/cohesin_peaks/
 ```shell
 CORES=15  # Set low due to high memory consumption per thread
 Rscript scripts/getGenomicFeatures.R $CORES
+ find misc-data/annotations/ -name "*.csv" -exec gzip -f {} \;
 ```
 
-2. Upload to AWS (Optional)
-
-```shell
-aws s3 sync misc-data/annotations/ s3://rlbase-data/misc/annotations/ 
-```
-
-2. Annotate peaks (genomic features and genes)
+3. Annotate peaks (genomic features and genes)
 
 ```shell
 CORES=44
@@ -333,7 +332,7 @@ OUTANNO="rlbase-data/misc/annotatedPeaks.tsv"
 Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
 ```
 
-2. Build the new `gene_expression` table and calculate correlations. 
+4. Build the new `gene_expression` table and calculate correlations. 
 
 ```shell
 # Creates misc/gene_expression.rda
@@ -360,7 +359,12 @@ Rscript scripts/rlregionsToFeatures.R
 
 
 
-4. Build the SQL database (optional)
+X. Build the RLHub 
+
+```shell
+Rscript scripts/prepRLHub.R
+aws s3 sync misc-data/rlhub/ s3://rlbase-data/rlhub/
+```
 
 
 
