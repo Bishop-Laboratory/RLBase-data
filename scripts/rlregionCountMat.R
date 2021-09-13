@@ -1,6 +1,5 @@
 #' Script for compiling latest RLBase data for RLHub
 library(tidyverse)
-library(RLSeq)
 library(Rsubread)
 library(pbapply)
 pbo <- pboptions(type="txt") 
