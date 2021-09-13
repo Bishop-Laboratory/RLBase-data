@@ -1,63 +1,43 @@
 #' Script for compiling latest RLBase data for RLHub
-dir.create("misc-data/rlhub/", showWarnings = FALSE)
 library(tidyverse)
 library(RLSeq)
 library(pbapply)
 pbo <- pboptions(type="txt") 
 
-AWS_HTTPS_URL <- "https://rlbase-data.s3.amazonaws.com/"
-
 ### Preliminaries ###
-
-# Minimum allowed size of ranges after liftover
-# Number is based on expected ranges size of 100kb
-MIN_LIFTED_SIZE <- 10000  
 
 # Directory where RMapDB bigWigs were downloaded to
 # This is the result of running in the shell:
 # `aws s3 sync s3://rmapdb-data/coverage/ rlbase-data/rlpipes-out/coverage/`
 BW_FOLDER <- "rlbase-data/rlpipes-out/coverage/"
 
-# correlation_genes_100kb.bed was graciously provided by Stella Hartono and Fred Chedin
-# These intervals correspond to the +/-50kb coordinated of sites profiled by SMRF-Seq
-# in 10.1016/j.jmb.2020.02.014 and used in their recent EMBO paper for correlation 
-# analysis: https://doi.org/10.15252/embj.2020106394
-GSBED_HG19 <- "https://rlbase-data.s3.amazonaws.com/misc/correlation_genes_100kb.bed"
-
 # Number of cores to use for parallel operations
 CORES_TO_USE <- 6
 
 #####################
 
-### Perform the analysis ###
-
-# Get the GS regions as a granges
-hg19gs <- rtracklayer::import(GSBED_HG19)
-
-# They were lifted from hg19 to hg38
-chain <- RLSeq:::getChain(genomeFrom = "hg19", genomeTo = "hg38")
-
-# Lift over
-ranges <- GenomicRanges::reduce(hg19gs)
-names(ranges) <- seq(GenomicRanges::start(ranges))
-lifted <- unlist(rtracklayer::liftOver(ranges, chain = chain)) 
-
-# Clean up the ranges 
-liftedRed <- GenomicRanges::reduce(lifted)
-hg38gs <- liftedRed[GenomicRanges::width(liftedRed) > MIN_LIFTED_SIZE,]
-
-# Windows of 1kb
-hg38Tbl <- hg38gs %>%
-  as.data.frame() %>%
-  tibble::as_tibble() %>%
-  dplyr::rename(chrom = .data$seqnames)
-hg38wds <- valr::bed_makewindows(hg38Tbl, win_size = 1000) %>%
-  dplyr::mutate(chrom = as.character(.data$chrom))
-
-# Make into GRanges
-positions <- hg38wds %>%
-  GenomicRanges::makeGRangesFromDataFrame() %>%
-  rtracklayer::BigWigSelection()
+# Combined S9.6 and dRNH consensus sites
+opts <- c("dRNH", "S96")
+rlrs <- lapply(opts, function(opt) {
+  message(opt)
+  gpat <- "(.+):(.+)\\-(.+):(.+)"
+  
+  # Wrangle granges from rlregions table
+  gr <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv") %>%
+    read_tsv(show_col_types = FALSE, progress = FALSE) %>%
+    select(rlregion, location) %>%
+    mutate(seqnames = gsub(location, pattern = gpat, replacement = "\\1"),
+           start = as.numeric(gsub(location, pattern = gpat, replacement = "\\2")),
+           end =  as.numeric(gsub(location, pattern = gpat, replacement = "\\3")),
+           strand =  gsub(location, pattern = gpat, replacement = "\\4")) %>%
+    select(-location) %>%
+    as.data.frame() %>%
+    GenomicRanges::makeGRangesFromDataFrame()
+}) 
+names(rlrs) <- opts
+rlru <- GenomicRanges::union(rlrs$dRNH, rlrs$S96) %>%
+  GenomicRanges::reduce() %>%
+  unique()
 
 # List the available bw files and wrangle
 # Alternatively just download them
@@ -75,7 +55,7 @@ bws <- tibble::tibble(
 # NOTE: this took a long time to finish and segfaulted several times
 # This is due to issues in the UCSC bigWig accessors in the rtracklayer 
 # package and SSL timeouts. Maybe be easier to just download locally.
-resLst <- pblapply(seq(bws$id), function(rowNow) {
+resLst <- parallel::mclapply(seq(bws$id)[1], function(rowNow) {
   
   # Get current values
   idNow <- bws$id[rowNow]
@@ -86,11 +66,10 @@ resLst <- pblapply(seq(bws$id), function(rowNow) {
     paste0(BW_FOLDER, bwFile)
   )
   bw <- rtracklayer::import.bw(con = bwCon, 
-                               selection = positions)
+                               selection = rlru)
   
   # Wrangle BW into tibble
   bw <- bw %>%
-    as.data.frame() %>%
     tibble::as_tibble() %>%
     dplyr::rename(chrom = .data$seqnames) %>%
     dplyr::mutate(chrom = as.character(.data$chrom))
@@ -103,7 +82,7 @@ resLst <- pblapply(seq(bws$id), function(rowNow) {
     id = !! idNow) %>%
     dplyr::select(.data$location, .data$id, .data$value) 
   
-}) 
+}, mc.cores = 44) 
 
 # Wrangle
 gsSignalRLBase <- dplyr::bind_rows(resLst) %>%
@@ -114,5 +93,3 @@ gsSignalRLBase <- dplyr::bind_rows(resLst) %>%
 ############################
 
 save(gsSignalRMapDB, file = "misc-data/gsSignalRLBase.rda", compress = "xz")
-
-

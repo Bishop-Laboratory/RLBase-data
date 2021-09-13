@@ -173,22 +173,47 @@ file.copy("misc-data/model/prepFeatures.rda", to = "misc-data/rlhub/models/prepF
 
 dir.create("misc-data/rlhub/gsg_correlation/", showWarnings = FALSE)
 
-file.copy("misc-data/gsSignalRLBase.rda", "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda")
+file.copy("misc-data/gsSignalRLBase.rda", 
+          "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda", 
+          overwrite = TRUE)
 
 # Get the corr
 load("misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda")
-corrPearson <- gsSignalRLBase %>%
+corr_pearson <- gsSignalRLBase %>%
   column_to_rownames("location") %>%
   as.matrix() %>%
   cor()
-corrSpearman <- gsSignalRLBase %>%
+corr_spearman <- gsSignalRLBase %>%
   column_to_rownames("location") %>%
   as.matrix() %>%
   cor(method = "spearman")
-corrKendall <- gsSignalRLBase %>%
-  column_to_rownames("location") %>%
-  as.matrix() %>%
-  cor(method = "kendall")
+
+save(corr_pearson, file = "misc-data/rlhub/gsg_correlation/corr_pearson.rda", compress = "xz")
+save(corr_spearman, file = "misc-data/rlhub/gsg_correlation/corr_spearman.rda", compress = "xz")
+
+## 7. Feature Enrichment Test Results
+dir.create("misc-data/rlhub/feature_enrichment/", showWarnings = FALSE)
+
+# Feature enrichment of individual peaks
+load("rlbase-data/misc/annotatedPeaks.rda")
+feature_enrichment_per_sample <- resAnno
+save(feature_enrichment_per_sample, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_per_sample.rda", compress = "xz")
+
+# Feature enrichment of RL-Regions
+load("rlbase-data/misc/annotatedPeaks.rlregions.rda")
+feature_enrichment_rlregions <- res
+save(feature_enrichment_rlregions, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_rlregions.rda", compress = "xz")
+
+## 8. Gene Expression
+dir.create("misc-data/rlhub/expression/", showWarnings = FALSE)
+geneexp <- read_csv("rlbase-data/misc/gene_expression.csv")
+save(geneexp, file = "misc-data/rlhub/expression/geneexp.rda", compress = "xz")
+
+## 9. RLRegion Counts (CTS, Norm, VST)
+
+
+
+
 
 
 

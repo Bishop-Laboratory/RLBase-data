@@ -30,7 +30,7 @@ peaktbl <- tibble(
 
 # Run annotations
 annotationLst <- RLSeq::annotations
-dir.create("../RLBase-data/tmp/annotatedPeaks")
+dir.create("../RLBase-data/tmp/annotatedPeaks", showWarnings = FALSE)
 resAnno <- pblapply(seq(peaktbl$experiment), function(i) {
   peak <- peaktbl$peakfile[i] %>%
     regioneR::toGRanges()
@@ -50,5 +50,43 @@ save(resAnno,
      compress = "xz")
 write_tsv(resAnno, OUTANNO)
 system(paste0("xz -f ", OUTANNO))
+
+
+# Repeat the same procedure using the RLRegions
+opts <- c("All", "dRNH", "S96")
+res <- lapply(opts, function(opt) {
+  message(opt)
+  gpat <- "(.+):(.+)\\-(.+):(.+)"
+  
+  # Wrangle granges from rlregions table
+  gr <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv") %>%
+    read_tsv(show_col_types = FALSE, progress = FALSE) %>%
+    select(rlregion, location) %>%
+    mutate(seqnames = gsub(location, pattern = gpat, replacement = "\\1"),
+           start = as.numeric(gsub(location, pattern = gpat, replacement = "\\2")),
+           end =  as.numeric(gsub(location, pattern = gpat, replacement = "\\3")),
+           strand =  gsub(location, pattern = gpat, replacement = "\\4")) %>%
+    select(-location) %>%
+    as.data.frame() %>%
+    GenomicRanges::makeGRangesFromDataFrame()
+  
+  # Perform feature enrichment
+  gr %>%
+    RLSeq::featureEnrich(genome = "hg38",
+                         annotations = annotationLst,
+                         cores = CORES) %>%
+    mutate(opt = !! opt) 
+}) %>% bind_rows()
+
+save(res,
+     file = gsub(OUTANNO, pattern = "\\.tsv", replacement = ".rlregions.rda"),
+     compress = "xz")
+
+
+
+
+
+
+
 
 
