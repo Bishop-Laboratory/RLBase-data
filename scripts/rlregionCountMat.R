@@ -69,6 +69,12 @@ samps <- read_tsv("rlbase-data/rlbase_samples.tsv") %>%
          bam_avail = file.exists(bam)) %>%
   filter(bam_avail)
 
+
+message("Starting Feature Counts")
+message(samps$bam)
+message(samps$paired_end)
+message(rlregions_union)
+
 # Use RSubRead to get the counts within each
 fcRes <- featureCounts(
   samps$bam, 

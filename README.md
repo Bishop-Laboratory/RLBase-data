@@ -351,6 +351,8 @@ Rscript scripts/rlregionsToFeatures.R
 
 3. Build the new correlation matrix. 
 
+
+
 4. Build tables for DB
 
 5. Update RLSeq with new data

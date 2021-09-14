@@ -8,6 +8,7 @@ pbo <- pboptions(type="txt")
 AWS_HTTPS_URL <- "https://rlbase-data.s3.amazonaws.com/"
 
 ## 1. Curated Genomic Annotations
+message("- 1. Annotations")
 dir.create("../RLBase-data/misc-data/rlhub/annotations", showWarnings = FALSE)
 
 # Obtain the annotation paths from local
@@ -43,7 +44,7 @@ annotationLst2 <- lapply(names(annotationLst), function(genome) {
   annotationGen <- annotationLst[[genome]]
   # Flatten annotations into tbl list
   subpat <- "(.+)__(.+)__(.+)"
-  message(" - Preparing annotations...")
+  message(" - - Preparing annotations...")
   annots <- lapply(annotationGen, FUN = function(x) {
     if ("tbl" %in% class(x)) {
       x
@@ -64,30 +65,41 @@ annotations$hg38 <- annotationLst2$hg38[! names(annotationLst2$hg38) %in% c("DNa
 save(annotations, file = "../RLBase-data/misc-data/rlhub/annotations/annotations.rda", compress="xz")
 
 ## 2. RL Regions
-
+message("- 2. RL-Regions")
 dir.create("misc-data/rlhub/rlregions/", showWarnings = FALSE)
 opts <- c("All", "dRNH", "S96")
-lapply(opts, function(opt) {
+pblapply(opts, function(opt) {
   # Get the rlregions table
   fl <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv")
   outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_table.rda")
   rlregions_table <- read_tsv(fl, show_col_types=FALSE, progress=FALSE)
+  outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_annotations.rda")
+  
   expcor <- paste0("rlbase-data/misc/", opt, "_rlExpCorr.tsv")
-  exp <- read_tsv(expcor)
-  left_join(rlregions_table, exp) %>%
-    dplyr::select(-chrom) %>%
-    save(compress = "xz", file = outtbl)
+  if (opt != "dRNH") {
+    exp <- read_tsv(expcor, show_col_types = FALSE, progress = FALSE)
+    left_join(rlregions_table, exp) %>%
+      dplyr::select(-chrom) %>%
+      save(compress = "xz", file = outtbl)
+  } else {
+    rlregions_table %>%
+      mutate(
+        corrR = NA,
+        corrPVal = NA,
+        corrPAdj = NA
+      ) %>%
+      save(compress = "xz", file = outtbl)
+  }
+  
   
   # Get the annotated rlregions table
   fl <- paste0("rlbase-data/misc/rlregions_", opt, "_annotations.csv")
-  outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_annotations.rda")
   rlregions_table <- read_csv(fl, show_col_types = FALSE, progress = FALSE)
   save(rlregions_table, compress = "xz", file = outtbl)
-  
 })
 
 ## 3. RL Samples
-
+message("- 3. RL-Samples")
 dir.create("misc-data/rlhub/rlsamples", showWarnings = FALSE)
 # Get the condition names for matching exp to rl
 expToCond <- read_csv("misc-data/rl_to_exp.csv", show_col_types = FALSE) %>%
@@ -130,7 +142,7 @@ rlsamples <- expToCond %>%
 save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz")
 
 ## 4. Get the RLFS res
-
+message("- 4. RLFS-res")
 dir.create("misc-data/rlhub/rlfsres", showWarnings = FALSE)
 
 # Magic
@@ -161,24 +173,25 @@ rlfsres <- lapply(names(rlfsData), function(x) {
 names(rlfsres) <- names(rlfsData)
 
 # Save
-save(rlfsResults, file = "misc-data/rlhub/rlfsres/rlfsres.rda", compress = "xz")
+save(rlfsres, file = "misc-data/rlhub/rlfsres/rlfsres.rda", compress = "xz")
 
 ## 5. Models
-
+message("- 5. Models")
 dir.create("misc-data/rlhub/models", showWarnings = FALSE)
 file.copy("misc-data/model/fftModel.rda", to = "misc-data/rlhub/models/fftModel.rda")
 file.copy("misc-data/model/prepFeatures.rda", to = "misc-data/rlhub/models/prepFeatures.rda")
 
 ## 6. GSG Correlation
-
+message("- 6. GS Corr")
 dir.create("misc-data/rlhub/gsg_correlation/", showWarnings = FALSE)
 
-file.copy("misc-data/gsSignalRLBase.rda", 
-          "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda", 
-          overwrite = TRUE)
+load("misc-data/gsSignalRLBase.rda")
+gsSignalRLBase <- gsSignalRMapDB
+save(gsSignalRLBase, file = "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda", compress = "xz")
 
 # Get the corr
 load("misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda")
+
 corr_pearson <- gsSignalRLBase %>%
   column_to_rownames("location") %>%
   as.matrix() %>%
@@ -192,6 +205,7 @@ save(corr_pearson, file = "misc-data/rlhub/gsg_correlation/corr_pearson.rda", co
 save(corr_spearman, file = "misc-data/rlhub/gsg_correlation/corr_spearman.rda", compress = "xz")
 
 ## 7. Feature Enrichment Test Results
+message("- 7. Feature enrichment")
 dir.create("misc-data/rlhub/feature_enrichment/", showWarnings = FALSE)
 
 # Feature enrichment of individual peaks
@@ -205,15 +219,13 @@ feature_enrichment_rlregions <- res
 save(feature_enrichment_rlregions, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_rlregions.rda", compress = "xz")
 
 ## 8. Gene Expression
+message("- 8. Gene expression")
 dir.create("misc-data/rlhub/expression/", showWarnings = FALSE)
-geneexp <- read_csv("rlbase-data/misc/gene_expression.csv")
+geneexp <- read_csv("rlbase-data/misc/gene_expression.csv", show_col_types = FALSE)
 save(geneexp, file = "misc-data/rlhub/expression/geneexp.rda", compress = "xz")
 
 ## 9. RLRegion Counts (CTS, Norm, VST)
-
-
-
-
+message("- 9. RLregions counts")
 
 
 
