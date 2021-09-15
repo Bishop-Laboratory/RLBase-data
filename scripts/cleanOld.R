@@ -6,13 +6,19 @@ suppressPackageStartupMessages(library(tidyverse))
 args <- commandArgs(trailingOnly = TRUE)
 
 # Location of the catalog excel file
-CATALOG=args[1]
-message(CATALOG)
-CONFIG=args[2]
-message(CONFIG)
+if (! interactive()) {
+  CATALOG=args[1]
+  message(CATALOG)
+  CONFIG=args[2]
+  message(CONFIG)
+} else {
+  CATALOG <- "rlbase-data/rlbase_catalog.xlsx"
+  CONFIG <- "rlbase-data/rlpipes-out/config.tsv"
+}
+
 
 # get the config
-config <- read_tsv(CONFIG)
+config <- read_tsv(CONFIG, show_col_types = FALSE, progress = FALSE)
 
 # Get the catalog, condition map, and modes
 redo <- readxl::read_excel(CATALOG, sheet = "redo") %>% pull(toRedo)

@@ -10,6 +10,9 @@ CORES <- args[1]
 
 dir.create("misc-data/annotations", showWarnings = FALSE)
 
+# Download cohesin datasets
+system("aws s3 sync s3://rlbase-data/misc/cohesin_peaks/ misc-data/cohesin_peaks/")
+
 ### Get genomic features from UCSC ###
 
 # Get the additional tables from UCSC

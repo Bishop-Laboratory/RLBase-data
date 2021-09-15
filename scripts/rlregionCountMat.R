@@ -13,7 +13,11 @@ BW_FOLDER <- "rlbase-data/rlpipes-out/coverage/"
 
 # Number of cores to use for parallel operations
 args <- commandArgs(trailingOnly = TRUE)
-CORES <- args[1]
+if (! interactive()) {
+  CORES <- args[1]
+} else {
+  CORES <- 44
+}
 
 #####################
 
@@ -24,7 +28,7 @@ rlrs <- lapply(opts, function(opt) {
   gpat <- "(.+):(.+)\\-(.+):(.+)"
   
   # Wrangle granges from rlregions table
-  gr <- paste0("rlregions_", opt, "_table.tsv.xz") %>%
+  gr <- paste0("../RLBase-data/rlbase-data/misc/rlregions_", opt, "_table.tsv") %>%
     read_tsv(show_col_types = FALSE, progress = FALSE) %>%
     filter(! is_repeat) %>%
     select(rlregion, location) %>%
@@ -61,28 +65,88 @@ save(rlregions_union, file = "misc-data/rlhub/rlregions/rlregions_union.rda", co
 
 
 # Get seq info
-samps <- read_tsv("rlbase-data/rlbase_samples.tsv") %>%
+samps <- read_tsv("../RLBase-data/rlbase-data/rlbase_samples.tsv") %>%
   filter(genome == "hg38", group == "rl") %>%
-  select(experiment, condType, strand_specific, paired_end) %>%
+  select(experiment, condType, strand_specific, paired_end, mode, verdict, discarded, numPeaks) %>%
   unique() %>%
-  mutate(bam = paste0("rlbase-data/rlpipes-out/bam/", experiment, "/", experiment, "_hg38.bam"),
+  mutate(bam = paste0("../RLBase-data/rlbase-data/rlpipes-out/bam/", experiment, "/", experiment, "_hg38.bam"),
          bam_avail = file.exists(bam)) %>%
   filter(bam_avail)
 
 
 message("Starting Feature Counts")
-message(samps$bam)
-message(samps$paired_end)
-message(rlregions_union)
+samps$paired_end[samps$experiment == "SRX9684573"] <- FALSE  # Correct a mistaken one
+# https://stackoverflow.com/questions/3318333/split-a-vector-into-chunks
+chunk2 <- function(x,n) split(x, cut(seq_along(x), n, labels = FALSE)) 
+chunks <- chunk2(x = seq(nrow(samps)), n = 3)
+fcResLst <- lapply(names(chunks), function(x) {
+  chunk <- chunks[[x]]
+  if (! file.exists(paste0("../RLBase-data/tmp/", x, "_fcRes.rda"))) {
+    fcRes <- featureCounts(
+      samps$bam[chunk], 
+      annot.ext =  rename(rlregions_union, Chr = seqnames, GeneID = rlrID,
+                          Start = start, End = end, Strand = strand),
+      allowMultiOverlap = TRUE,  # Reads may span multiple rlregions easily
+      minMQS = 10,
+      isPairedEnd = samps$paired_end[chunk],
+      nthreads=CORES
+    )
+    save(fcRes, file = paste0("../RLBase-data/tmp/", x, "_fcRes.rda"))
+  } else {
+    message("Already done")
+    load(paste0("../RLBase-data/tmp/", x, "_fcRes.rda"))
+    fcRes
+  }
+})
 
-# Use RSubRead to get the counts within each
-fcRes <- featureCounts(
-  samps$bam, 
-  annot.ext =  rename(rlregions_union, Chr = seqnames, GeneID = rlrID,
-                      Start = start, End = end, Strand = strand),
-  allowMultiOverlap = TRUE,  # Reads may span multiple rlregions easily
-  minMQS = 10,
-  isPairedEnd = samps$paired_end
+# Combine the results from rsubread
+cts <- lapply(
+  fcResLst, 
+  function(x) {
+    x$counts
+  }
+) %>% do.call("cbind", .) 
+rownames(cts)
+colnames(cts) <- gsub(colnames(cts), pattern = "_hg38.bam", replacement = "")
+
+# Get log2 TPM
+# From https://support.bioconductor.org/p/91218/
+rllengths <- rlregions_union$width
+x <- cts/rllengths
+tpm <- log2(t( t(x) * 1e6 / colSums(x) ) + 1)
+
+# Wrangle into DESeq2 dataset and get vst
+dds <- DESeq2::DESeqDataSetFromMatrix(
+  cts + 1, samps, design = ~1
 )
-save(fcRes, file = "tmp/fcRes.rda")
+vsd <- DESeq2::vst(dds)
+
+ctsLst <- list(
+  "cts" = cts,
+  "vst" = vsd@assays@data@listData[[1]],
+  "tpm" = tpm
+) 
+rlregions_counts <- lapply(seq(ctsLst), function(i) {
+  ctsNow <- ctsLst[[i]]
+  typeCts <- names(ctsLst)[i]
+  ctsNow %>%
+    as.data.frame() %>%
+    rownames_to_column(var = "rlregion") %>%
+    pivot_longer(
+      values_to = typeCts, names_to = "experiment",
+      cols = -1
+    )
+}) %>% purrr::reduce(inner_join, by = c("rlregion", "experiment"))
+
+rlregions_counts <- SummarizedExperiment(
+  assays = ctsLst, colData = samps, rowData = rowData(dds)
+) 
+
+save(rlregions_counts, 
+     file = "../RLBase-data/misc-data/rlhub/rlregions/rlregions_counts.rda", 
+     compress = "xz")
+
+
+
+
 

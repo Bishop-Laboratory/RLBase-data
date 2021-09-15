@@ -1,8 +1,13 @@
-# RMapDB-Datasets
+# RLBase-Datasets
 
-This `README` outlines all the steps required to fully build (or update) the datasets in RMapDB.
-It has only been tested on `Ubuntu 18.04 LTS`. It will take several days/weeks to fully run the first
-time, and it is not recommended without access to high-performance computing resources.
+This `README` outlines all the steps required to fully build (or update) the datasets in RLBase.
+It has only been tested on `Ubuntu 20.04/18.04 LTS`. 
+Processed data-sets can be accessed via the `RLHub` R package. 
+
+**Time required**: It took around 3 weeks to fully run this protocol with 100 threads
+and 250GiB of RAM allocated. Updating the database with new data will also take
+substantial time and computing resources in proportion to the number and size 
+of FASTQ files which must be aligned.
 
 ## Setup
 
@@ -12,10 +17,9 @@ time, and it is not recommended without access to high-performance computing res
 git clone https://github.com/Bishop-Laboratory/RLBase-data.git
 git clone https://github.com/Bishop-Laboratory/RLPipes.git
 git clone https://github.com/Bishop-Laboratory/RLSeq.git
-git clone https://github.com/Bishop-Laboratory/RLHub.git
 ```
 
-2. Create the environment
+2. Create the environment (requires [conda](https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh))
 
 ```shell
 cd RLBase-data/misc-data/
@@ -33,7 +37,7 @@ mamba env create -f env.yml --force
 conda activate rlbaseData
 ```
 
-3. Install RLPipes and RLSeq
+3. Install `RLPipes` and `RLSeq`
 
 ```shell
 pip install -e ../RLPipes/
@@ -44,7 +48,7 @@ R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
 
 ## Generate datasets
 
-The following details the steps taking to generate and update RLBase datasets. 
+The following steps taking to generate and update RLBase datasets. 
 If you have write permissions on the AWS buckets used here, you can complete
 every step if `awscli` is configured:
 
@@ -57,63 +61,89 @@ existing buckets.
 
 ### Preliminary
 
-These preliminary steps just illustrate how the original annotation data and 
+These preliminary steps illustrate how the original annotation data and 
 genome info was collated.
 
-#### Available genome info
+1. Available genome info
 
-Generate the available genome information using the script below (takes several hours):
+This script downloads available genomes from the UCSC Genome Browser FTP.
+It then uses `unique-kmers.py` (from the `khmer` pacakge) to calculate the 
+effective genome size at various read lengths 
+(36bp, 50bp, 75bp, 100bp, 125bp, 150p, 250bp). It then combines these results
+with the other metadata available for the genome, saving the output in a
+`data.frame` stored in `misc-data/available_genomes.rda`.
 
 ```shell
 conda deactivate
-R -e "source('scripts/makeAvailableGenomes.R')"
+Rscript scripts/makeAvailableGenomes.R
 conda activate rlbaseData
 ```
 
-#### RLFS Beds files
+2. RLFS Beds files
 
-These data are now permanently available from the bucket located
-here: s3://rlbase-data/rlfs-beds/
+R-loop-forming sequences (RLFS) were obtained for each genome of interest using 
+the `QmRLFS-finder.py` script. 
 
-To download all files, run the following command:
-
-```shell
-aws s3 sync s3://rlbase-data/rlfs-beds/ rlfs-beds/
-```
-
-These files were generated via the following:
-
-1. Download `QmRLFS-finder.py` (NOTE: First read `scripts/QmRLFS-finder/README.md`)
-
-```shell
-wget -O scripts/QmRLFS-finder/QmRLFS-finder.py https://raw.githubusercontent.com/piroonj/QmRLFS-finder/master/QmRLFS-finder.py
-```
-
-2. Download and unpack genomes 
-
-```shell
-Rscript scripts/makeRLFSBeds.R 1 FALSE
-```
-
-3. Generate RLFS Bed Files (Takes several hours, depending on parallelization and download speed)
+`QmRLFS-finder.py` was downloaded by the RLBase authors in October 2020 from the public repository [here](https://github.com/piroonj/QmRLFS-finder) and used with the permission of its creator. 
 
 ```shell
 CORES=40  # Number of cores for parallel operations
-Rscript scripts/makeRLFSBeds.R $CORES TRUE
+Rscript scripts/makeRLFSBeds.R 1 FALSE  # Downloads needed genomes
+Rscript scripts/makeRLFSBeds.R $CORES TRUE  # Runs QmRLFS-Finder.py in parallel
 ```
 
-4. Generate SkewR tracks
+3. Generate Annotation Database
+
+This script generates the genomic annotations needed by RLSuite. See the "Annotation Sources" section for further details.
+
+<details>
+
+  <summary>Annotation sources</summary>
+  
+Annotations relevant to R-loop biology were aggregated from a variety of sources:
+
+  - UCSC tables (obtained via `rtracklayer::ucscTableQuery()`)
+    - cpgIslandExt
+    - centromeres
+    - encodeCcreCombined
+    - knownGene
+    - microsat
+    - rmsk
+    - knownAl
+    - wgRn
+    - tRNAs 
+    - coriellDelDup 
+    - wgEncodeGencodePolyaV38
+    - encRegTfbsClustered
+  - UCSC Ensembl Gene GTFs
+    - hg38 - [link](http://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/genes/hg38.ensGene.gtf.gz)
+    - mm10 - [link](http://hgdownload.soe.ucsc.edu/goldenPath/mm10/bigZips/genes/mm10.ensGene.gtf.gz)
+  - G4-Quadruplex Predictions - [link](https://figshare.com/ndownloader/files/6432597)
+  - G4-Quadruplex Experiments - [link (+)](https://ftp.ncbi.nlm.nih.gov/geo/series/GSE63nnn/GSE63874/suppl/GSE63874_Na_K_PDS_plus_hits_intersect.bed.gz); [link (-)](https://ftp.ncbi.nlm.nih.gov/geo/series/GSE63nnn/GSE63874/suppl/GSE63874_Na_K_PDS_minus_hits_intersect.bed.gz)
+  - Encode 
+    - Histone BED narrowPeak files (Full manifest in `misc-data/histone_encode_manifest.csv`)
+    - RBP binding sites (ChIP and eCLiP) contributed by [this study](https://www.nature.com/articles/s41586-020-2077-3)
+  - SkewR annotations of human and mouse genomes - generated by running `skewr` - [link](https://github.com/srhartono/SkewR)
+  - RBP binding site predictions from oRNAment - [link](http://rnabiology.ircm.qc.ca/oRNAment/dashboard/)
+  - Cohesin binding sites generated by the authors of [this study](https://doi.org/10.1093/nar/gkaa284).
+  
+</details>
 
 ```shell
-cd misc-data/SkewR/
-perl bin/RunGC-SKEW.pl -s ~/.rseq_genomes/hg38/hg38.fa -m model/GC_SKEW_7600.hmm -g ~/.rseq_genomes/hg38/hg38.ensGene.bed -b ~/.rseq_genomes/hg38/hg38.cpg.bed -o skewr_res_hg38 -z 20
+# Runs the annotation script
+CORES=15  # Set low due to high memory consumption per thread
+Rscript scripts/getGenomicFeatures.R $CORES
+
+# Compress resulting files
+find misc-data/annotations/ -name "*.csv" -exec gzip -f {} \;
 ```
 
 4. (optional) Upload the results to AWS (Requires admin privileges)
 
 ```shell
-aws s3 sync misc-data/ s3://rmapdb-data/misc/
-aws s3 sync rlfs-beds/ s3://rmapdb-data/rlfs-beds/
+aws s3 cp misc-data/available_genomes.rda s3://rlbase-data/misc/
+aws s3 sync misc-data/rlfs/*.bed s3://rlbase-data/rlfs-beds/
+aws s3 sync misc-data/annotations/ s3://rlbase-data/annotations/
 ```
 
 ## Run RLPipes on all public samples
@@ -123,9 +153,9 @@ samples, hand-curated in the manner described in the RLSuite publication.
 
 The previous catalog is available [here](https://github.com/Bishop-Laboratory/RLBase-data/raw/main/rlbase-data/rlbase_catalog.xlsx)
 
-The following are the steps performed to generate the database:
+The following steps are performed to generate (or update) the database:
 
-1. Prepare catalog of publicly-available samples. Current catalog can serve as a template.
+1. Prepare catalog of publicly-available samples. The current catalog can serve as a template.
 
 2. Make pipeline manifests from catalog
 
@@ -217,7 +247,7 @@ aws s3 sync $RLPIPESOUT/datadump/ s3://rlbase-data/datadump/
 
 ```shell
 FTPSITE="ftp.box.com"
-REMOTEDIR="RMapDB-Archive/"
+REMOTEDIR="RLBase-Archive/"
 lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
 ```
 
@@ -309,20 +339,6 @@ snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --config manifest=$M
 
 ## Other
 
-0. Download the cohesin peaks
-
-```shell
-aws s3 sync s3://rlbase-data/misc/cohesin_peaks/ misc-data/cohesin_peaks/ 
-```
-
-1. Compile genomic features
-
-```shell
-CORES=15  # Set low due to high memory consumption per thread
-Rscript scripts/getGenomicFeatures.R $CORES
- find misc-data/annotations/ -name "*.csv" -exec gzip -f {} \;
-```
-
 3. Annotate peaks (genomic features and genes)
 
 ```shell
@@ -350,6 +366,7 @@ Rscript scripts/rlregionsToFeatures.R
 ```
 
 3. Build the new correlation matrix. 
+
 
 
 
