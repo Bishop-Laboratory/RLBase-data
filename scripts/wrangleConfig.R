@@ -70,7 +70,17 @@ condTbl$conds <- pbsapply(
 fixed <- condTbl %>%
   select(experiment, condType=conds) %>%
   right_join(fixed, by = "experiment") %>%
+  mutate(condition = case_when(
+    condition == "ActD" ~ "Input",
+    TRUE ~ condition
+  )) %>%
   unique()
+
+# Remove duplicates
+if ("condType.x" %in% colnames(fixed)) {
+  fixed <- select(fixed, -condType.x, -condType.y) %>%
+    unique()
+}
 
 # Save to file
 write_tsv(fixed, CONFIG)

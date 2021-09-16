@@ -5,7 +5,7 @@
 library(tidyverse)
 library(pbapply)
 pbo <- pboptions(type="txt") 
-
+dir.create("misc-data/expression/", showWarnings = FALSE)
 args <- commandArgs(trailingOnly = TRUE)
 
 if (! interactive()) {
@@ -14,7 +14,7 @@ if (! interactive()) {
   rlbase_samples <- args[3]
 } else {
   SALMON_OUT <- "rlbase-data/rlpipes-out/quant/"
-  GENE_EXP_TABLE <- "rlbase-data/misc/gene_expression.csv"
+  GENE_EXP_TABLE <- "misc-data/expression/geneexp.rda"
   rlbase_samples <- "rlbase-data/rlbase_samples.tsv"
 }
 
@@ -90,33 +90,35 @@ txi <- tximport::tximport(files = fls, type = "salmon", tx2gene = tx2gene, ignor
 
 # Get variance-stabilizing transform
 dds <- DESeq2::DESeqDataSetFromTximport(txi, colData = quanttbl, design = ~1)
-dds <- dds[,colSums(dds@assays@data$counts) > 5E6]
 vsd <- DESeq2::vst(dds)
-vsd <- vsd@assays@data[[1]]
-vsd <- vsd %>%
-  as.data.frame() %>%
-  rownames_to_column(var = "gene_id") %>%
-  pivot_longer(cols = -gene_id) %>%
-  dplyr::rename(exp_sample_id = name,
-                vst = value)
-# Get TPM
-tpm <- txi$abundance %>%
-  as.data.frame() %>%
-  rownames_to_column(var = "gene_id") %>%
-  pivot_longer(cols = -gene_id) %>%
-  dplyr::rename(exp_sample_id = name,
-                log2tpm = value) %>%
-  mutate(log2tpm = log2(log2tpm + 1))
+
+# Make into summarized experiment
+gene_exp <- SummarizedExperiment::SummarizedExperiment(
+  assays = list(
+    "cts" = dds@assays@data$counts,
+    "vst" = vsd@assays@data[[1]],
+    "tpm" = log2(txi$abundance  + 1)
+  ),
+  colData = SummarizedExperiment::colData(dds),
+  rowData = SummarizedExperiment::rowData(dds)
+)
+
 # Get Counts
-counts <- txi$counts %>%
-  as.data.frame() %>%
-  rownames_to_column(var = "gene_id") %>%
-  pivot_longer(cols = -gene_id) %>%
-  dplyr::rename(exp_sample_id = name,
-                counts = value)
-# Compile
-gene_exp <- purrr::reduce(list(counts, tpm, vsd), inner_join, by = c("gene_id", "exp_sample_id"))
-write_csv(gene_exp, GENE_EXP_TABLE)
+save(gene_exp, file = GENE_EXP_TABLE, compress = "xz")
+
+# Convert to long format
+gene_exp_long <- pblapply(names(gene_exp@assays@data), function(x) {
+  dat <- gene_exp@assays@data[[x]]
+  dat %>%
+    as.data.frame() %>%
+    rownames_to_column("gene_id") %>%
+    pivot_longer(cols = -gene_id) %>%
+    rename(
+      experiment = name,
+      !!quo_name(x) := value 
+    )
+}) %>%
+  purrr::reduce(inner_join, by=c("gene_id", "experiment"))
 
 ## Calculate gene expression correlation with R-loop levels ##
 message("- Obtaining biological condition names")
@@ -136,13 +138,12 @@ matchConds <- pbsapply(seq(nrow(expToCond)), function(i) {
 expToCond$matchCond <- matchConds
 
 # Get the files
-rlregionfiles <- list.files("rlbase-data/misc/", pattern = "rlregions.*\\.tsv", full.names = TRUE)
+rlregionfiles <- list.files("rlbase-data/misc/", pattern = "rlregions_.*_table\\.tsv", full.names = TRUE)
 names(rlregionfiles) <- gsub(rlregionfiles, pattern = ".+//rlregions_([a-zA-Z0-9]+)_table.tsv$", replacement = "\\1")
 
 # For each, get the condition -> expression mapping
 message("- Matching expression to biological conditions")
 rlCondExp <- pblapply(seq(rlregionfiles), function(i) {
-  message(i)
   rlrfile <- rlregionfiles[i]
   cond <- names(rlrfile)
   rlrs <- read_tsv(rlrfile, show_col_types = FALSE)
@@ -159,10 +160,10 @@ rlCondExp <- pblapply(seq(rlregionfiles), function(i) {
       by = c("samples" = "rl")
     ) %>%
     select(rlregion, exp, matchCond, geneIDs) %>%
-    inner_join(gene_exp, by = c("exp" = "exp_sample_id", "geneIDs" = "gene_id")) %>%
+    inner_join(gene_exp_long, by = c("exp" = "experiment", "geneIDs" = "gene_id")) %>%
     group_by(rlregion, matchCond) %>%
     summarise(
-      maxTPM = max(log2tpm),
+      maxTPM = max(tpm),
       maxVST = max(vst)
     )
 })
@@ -196,7 +197,7 @@ names(rlCondSignals) <- names(rlsigfiles)
 
 # Get the correlations
 rlCorrs <- pblapply(
-  rlCondSignals[-2], function(x) {
+  rlCondSignals[-which(names(rlCondSignals) == "dRNH")], function(x) {
     tokeep <- x %>% count() %>% filter(n > 2) %>% pull(rlregion)
     corres <- x %>%
       filter(rlregion %in% tokeep) %>%
@@ -210,23 +211,12 @@ rlCorrs <- pblapply(
 )
 
 # Save the correlations
-lapply(names(rlCorrs), function(cond) {
+a_ <- lapply(names(rlCorrs), function(cond) {
   tblcor <- rlCorrs[[cond]]
   write_tsv(tblcor, file = paste0("rlbase-data/misc/", cond, "_rlExpCorr.tsv"))
 })
 
 message("Done")
-
-
-
-
-
-
-
-
-
-
-
 
 
 

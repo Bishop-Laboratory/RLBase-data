@@ -1,7 +1,7 @@
 ---
 title: "RLSeq - Fourier Analysis classifier"
 author: "Daniel Montemayor<br><small>Center for Renal Precision Medicine<br>University of Texas Health San Antonio School of Medicine</small>"
-date: "<small>`r Sys.Date()`</small>"
+date: "Built at <strong>`r Sys.time()`</strong>"
 output:
   html_document:
     toc: yes
@@ -212,7 +212,7 @@ confusionMatrix(yhat, test$group)
 fftModel <- stacked_model
 prepFeatures <- prep
 
-save(prepFeatures, file = "../misc-data/prepFeatures.rda", compress = "xz")
-save(fftModel, file = "../misc-data/fftModel.rda", compress = "xz")
+save(prepFeatures, file = "../misc-data/model/prepFeatures.rda", compress = "xz")
+save(fftModel, file = "../misc-data/model/fftModel.rda", compress = "xz")
 ```
 

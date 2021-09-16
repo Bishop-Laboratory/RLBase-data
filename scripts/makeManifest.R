@@ -7,8 +7,10 @@ args <- commandArgs(trailingOnly = TRUE)
 # Location of the catalog excel file
 if (! interactive()) {
   CATALOG <- args[1]
+  MANIFEST <- args[2]
 } else {
   CATALOG <- "rlbase-data/rlbase_catalog.xlsx"
+  MANIFEST <- "rlbase-data/rlbase_manifest.csv"
 }
 message(CATALOG)
 
@@ -38,7 +40,8 @@ toBuild <- catalogGrouped %>%
 
 # Write csv
 toBuild %>%
-  write_csv(args[2])
+  write_csv(MANIFEST)
+
 
 # Echo out
 message("\nDone -- file written: ", args[2], "\n")

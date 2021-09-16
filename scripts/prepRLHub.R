@@ -10,66 +10,10 @@ AWS_HTTPS_URL <- "https://rlbase-data.s3.amazonaws.com/"
 ## 1. Curated Genomic Annotations
 message("- 1. Annotations")
 dir.create("../RLBase-data/misc-data/rlhub/annotations", showWarnings = FALSE)
-
-# Obtain the annotation paths from local
-annot_pat <- "([a-zA-Z0-9]+)/([a-zA-Z0-9_ \\-]+)\\.csv\\.gz"
-annots <- tibble(Key = list.files("../RLBase-data/misc-data/annotations/", recursive = TRUE)) %>%
-  dplyr::filter(grepl(Key, pattern = annot_pat)) %>%
-  dplyr::mutate(genome = gsub(Key, pattern = annot_pat, replacement = "\\1"),
-                db = gsub(Key, pattern = annot_pat, replacement = "\\2")) 
-
-# Download into R environment as a list
-annotationLst <- lapply(
-  unique(annots$genome),
-  function(genome) {
-    message(genome)
-    annotGen <- dplyr::filter(annots, genome == {{ genome }})
-    annotations <- pbapply::pblapply(
-      seq(nrow(annotGen)), 
-      function(i) {
-        fl <- annotGen$Key[i]
-        readr::read_csv(
-          paste0("../RLBase-data/misc-data/annotations/", fl), 
-          show_col_types = FALSE, 
-          progress = FALSE
-        )
-      }
-    )
-    names(annotations) <- annotGen$db
-    annotations
-  }
-) 
-names(annotationLst) <- unique(annots$genome)
-annotationLst2 <- lapply(names(annotationLst), function(genome) {
-  annotationGen <- annotationLst[[genome]]
-  # Flatten annotations into tbl list
-  subpat <- "(.+)__(.+)__(.+)"
-  message(" - - Preparing annotations...")
-  annots <- lapply(annotationGen, FUN = function(x) {
-    if ("tbl" %in% class(x)) {
-      x
-    } else {
-      dplyr::bind_rows(x)
-    }
-  }) %>% 
-    dplyr::bind_rows() %>%
-    dplyr::mutate(
-      comb = gsub(.data$name, pattern = subpat, 
-                  replacement = "\\1__\\2", perl=TRUE)
-    ) %>% dplyr::group_by(.data$comb) %>%
-    {setNames(dplyr::group_split(.), dplyr::group_keys(.)[[1]])}
-})
-names(annotationLst2) <- names(annotationLst)
-annotations <- annotationLst2
-annotations$hg38 <- annotationLst2$hg38[! names(annotationLst2$hg38) %in% c("DNaseHS__DNaseHS")]
-annotationLst <- annotations
-lapply(names(annotationLst), function(genome) {
-  annotations <- annotationLst[[genome]]
-  annotations <- lapply(annotations, function(x) {
-    dplyr::select(x, -comb)
-  })
-  save(annotations, file = paste0("../RLBase-data/misc-data/rlhub/annotations/annotations_", genome, ".rda"), compress="xz")
-})
+file.copy("misc-data/annotations/annotations_hg38.rda",
+          "misc-data/rlhub/annotations/annotations_hg38.rda", overwrite = TRUE)
+file.copy("misc-data/annotations/annotations_mm10.rda",
+          "misc-data/rlhub/annotations/annotations_mm10.rda", overwrite = TRUE)
 
 ## 2. RL Regions
 message("- 2. RL-Regions")
@@ -161,8 +105,13 @@ TODISCARD <- "misc-data/todiscard.rda"
 # Load the rlfsRes
 load(RLFSRDA)
 
+# Load the models
+load("misc-data/model/fftModel.rda")
+load("misc-data/model/prepFeatures.rda")
+
 # Get the predictions
-rlfsPred <- pbapply::pblapply(rlfsRes, predictCondition)
+rlfsPred <- pbapply::pblapply(rlfsRes, predictCondition, 
+                              prepFeatures=prepFeatures, fftModel=fftModel)
 
 # Clean large function
 rlfsData <- lapply(rlfsRes, FUN = function(x) {
@@ -185,8 +134,10 @@ save(rlfsres, file = "misc-data/rlhub/rlfsres/rlfsres.rda", compress = "xz")
 ## 5. Models
 message("- 5. Models")
 dir.create("misc-data/rlhub/models", showWarnings = FALSE)
-file.copy("misc-data/model/fftModel.rda", to = "misc-data/rlhub/models/fftModel.rda")
-file.copy("misc-data/model/prepFeatures.rda", to = "misc-data/rlhub/models/prepFeatures.rda")
+file.copy("misc-data/model/fftModel.rda", overwrite = TRUE,
+          to = "misc-data/rlhub/models/fftModel.rda")
+file.copy("misc-data/model/prepFeatures.rda", overwrite = TRUE,
+          to = "misc-data/rlhub/models/prepFeatures.rda")
 
 ## 6. GSG Correlation
 message("- 6. GS Corr")
@@ -195,21 +146,6 @@ dir.create("misc-data/rlhub/gsg_correlation/", showWarnings = FALSE)
 load("misc-data/gsSignalRLBase.rda")
 gsSignalRLBase <- gsSignalRMapDB
 save(gsSignalRLBase, file = "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda", compress = "xz")
-
-# Get the corr
-load("misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda")
-
-corr_pearson <- gsSignalRLBase %>%
-  column_to_rownames("location") %>%
-  as.matrix() %>%
-  cor()
-corr_spearman <- gsSignalRLBase %>%
-  column_to_rownames("location") %>%
-  as.matrix() %>%
-  cor(method = "spearman")
-
-save(corr_pearson, file = "misc-data/rlhub/gsg_correlation/corr_pearson.rda", compress = "xz")
-save(corr_spearman, file = "misc-data/rlhub/gsg_correlation/corr_spearman.rda", compress = "xz")
 
 ## 7. Feature Enrichment Test Results
 message("- 7. Feature enrichment")
@@ -227,14 +163,11 @@ save(feature_enrichment_rlregions, file = "misc-data/rlhub/feature_enrichment/fe
 
 ## 8. Gene Expression
 message("- 8. Gene expression")
-dir.create("misc-data/rlhub/expression/", showWarnings = FALSE)
-geneexp <- read_csv("rlbase-data/misc/gene_expression.csv", show_col_types = FALSE)
-save(geneexp, file = "misc-data/rlhub/expression/geneexp.rda", compress = "xz")
+# This done within the buildExpression.R script...
+file.copy("misc-data/expression/geneexp.rda",
+          "misc-data/rlhub/expression/geneexp.rda", overwrite = TRUE)
 
 ## 9. RLRegion Counts (CTS, Norm, VST)
-message("- 9. RLregions counts")
-
-
-
+# This done within the rlregionCountMat.R script...
 
 

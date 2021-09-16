@@ -38,7 +38,7 @@ csvToGR <- function(csv) {
 #' Makes the "Rloops" table
 makeRLoops <- function(ORIG_RL, MAX_RL_SIZE, RLOOPS) {
   
-  cond <- gsub(RLOOPS, pattern = ".+rlregions_([a-zA-Z0-9]+)\\.csv", replacement = "\\1")
+  cond <- gsub(RLOOPS, pattern = ".*rlregions_([a-zA-Z0-9]+)\\.csv", replacement = "\\1")
   
   readRL <- function(x, max_rl_size) {
     readr::read_tsv(x, col_names = c(
@@ -58,6 +58,7 @@ makeRLoops <- function(ORIG_RL, MAX_RL_SIZE, RLOOPS) {
            location = paste0(chrom, ":", start, "-", end, ":", strand),
            confidence_level = score,
            origName = name) 
+  
     
   # Check RLFS, chrom_sizes, and mask
   RLFS <- RLSeq:::getRLFSAnno("hg38")
@@ -76,10 +77,18 @@ makeRLoops <- function(ORIG_RL, MAX_RL_SIZE, RLOOPS) {
     pull(id.x) %>% 
     unique()
   
-  rloops %>%
-    mutate(is_rlfs = id %in% !! olr) %>%
-    dplyr::select(id, type, location, confidence_level, is_rlfs, origName) %>%
-    write_csv(RLOOPS)
+  source <- gsub(RLOOPS, pattern = ".*rlregions_(.+)\\.csv", replacement = "\\1")
+  if (source == "All") {
+    sources <- rloops$signalValue
+  } else {
+    sources <- source
+  }
+  rlregout <- rloops %>%
+    mutate(is_rlfs = id %in% !! olr,
+           source = {{ sources }}) %>%
+    dplyr::select(id, type, location, confidence_level, is_rlfs, origName, source, type)
+  
+  write_csv(rlregout, RLOOPS)
   return(NULL)
 }
 
@@ -94,14 +103,13 @@ if (! interactive()) {
   manifest <- snakemake@params[['manifest']]
   blacklist <- snakemake@params[['blacklist']]
 } else {
-  
-  hg38rl <- "rlbase-data/rlregions/hg38_manifest_All.csv"
-  rlregionsIn <- "rlbase-data/rlregions/rlregions_All.narrowPeak"
-  rlregout <- "rlbase-data/rlregions/rlregions_All.csv"
-  rlregtbl <- "rlbase-data/misc/rlregions_All_table.tsv"
-  rlregoutbed <- "rlbase-data/rlregions/rlregions_All.bed"
-  sigtsv <- "rlbase-data/rlregions/rlregions_All_signal.tsv"
-  manifest <- "rlbase-data/rlbase_samples.tsv"
+  hg38rl <- "rlregions/hg38_manifest_dRNH.csv"
+  rlregionsIn <- "rlregions/rlregions_dRNH.narrowPeak"
+  rlregout <- "rlregions/rlregions_dRNH.csv"
+  rlregtbl <- "misc/rlregions_dRNH_table.tsv"
+  rlregoutbed <- "rlregions/rlregions_dRNH.bed"
+  sigtsv <- "rlregions/rlregions_dRNH_signal.tsv"
+  manifest <- "rlbase_samples.tsv"
   blacklist <- "https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
 }
 
@@ -120,7 +128,7 @@ manifest <- read_tsv(manifest, show_col_types = FALSE)
 MAX_RL_SIZE <- 50000
 
 message("- Overlapping with RLFS")
-makeRLoops(ORIG_RL = rlregionsIn, MAX_RL_SIZE, RLOOPS = rlregout)
+a_ <- makeRLoops(ORIG_RL = rlregionsIn, MAX_RL_SIZE, RLOOPS = rlregout)
 
 # Need to create BED file for deeptools to use
 rlgr <- rlregout %>% csvToGR()
@@ -136,7 +144,7 @@ rltbl <- read_csv(rlregout, show_col_types = FALSE) %>%
     strand = gsub(location, pattern = "(.+):(.+)\\-(.+):(.+)", replacement = "\\4")
   ) %>%
   dplyr::select(
-    chrom=seqnames, start, end, strand, rlregion=id, confidence_level, is_rlfs
+    chrom=seqnames, start, end, strand, rlregion=id, confidence_level, is_rlfs, source
   )
 pklst <- pblapply(
     peaks[,1,drop=TRUE],
@@ -185,8 +193,11 @@ loc <- isctSRa %>%
 
 # Intersect sample metadata and RL regions
 rlregionsOl <- dplyr::select(isctSRa, rlregion=rlregion.x, sample=.source, 
-                      is_rlfs=is_rlfs.x, confidence_level=confidence_level.x, 
-                      signalVal=signalVal.y, pVal=pVal.y, qVal=qVal.y,
+                             is_rlfs=is_rlfs.x, 
+                             source = source.x,
+                             confidence_level=confidence_level.x, 
+                             signalVal=signalVal.y,
+                             pVal=pVal.y, qVal=qVal.y,
                       contains("med"), contains("avg")) %>%
   left_join(loc) %>%
   relocate(location, .after = rlregion)
@@ -224,7 +235,6 @@ rlregions <- rlregionsOl %>%
   distinct(rlregion, .keep_all = TRUE)
 rlregions <- rlregions %>% 
   arrange(desc(nStudies), desc(avgQVal)) 
-
 
 ## Add in genes ##
 message("- Adding in genes")
@@ -310,13 +320,11 @@ blklst <- read_tsv(blacklist, col_names = c("chrom", "start", "end"), show_col_t
   mutate(strand = "*",
          type = "blacklist")
 # Get repeats
-rmsk <- RLSeq::annotationLst$hg38 %>%
-  keep(names(.) %in% c("Centromeres", "Retroposon", "rRNA", "Satellite", 
-                       "scRNA", "snRNA", "tRNA", "RC", "srpRNA")) %>%
-  as.list() %>%
-  dplyr::bind_rows() %>%
-  dplyr::rename(chrom = seqnames)
-
+rmsk <- read_csv("../misc-data/annotations/hg38/Repeat_Masker.csv.gz", show_col_types = FALSE, progress = FALSE)
+rmsk <- rmsk %>%
+  mutate(type = gsub(name, pattern = ".+__(.+)__.+", replacement = "\\1")) %>%
+  filter(type %in% c("Centromeres", "Retroposon", "rRNA", "Satellite", 
+                      "scRNA", "snRNA", "tRNA", "RC", "srpRNA"))
 # Bind together
 repeats <- bind_rows(blklst, rmsk)
 

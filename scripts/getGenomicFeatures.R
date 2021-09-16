@@ -229,7 +229,7 @@ dnase <- read_tsv("http://hgdownload.cse.ucsc.edu/goldenpath/hg38/database/wgEnc
 
 # TFBS
 tfbs <- read_tsv("http://hgdownload.cse.ucsc.edu/goldenpath/hg38/database/encRegTfbsClustered.txt.gz",
-                  col_names = c("x", "chrom", "start", "end", "type"), show_col_types = FALSE, progress = FALSE) %>%
+                 col_names = c("x", "chrom", "start", "end", "type"), show_col_types = FALSE, progress = FALSE) %>%
   mutate(db="encodeTFBS", strand="*",) %>%
   dplyr::select(chrom, start, end, strand, type, db)
 
@@ -308,7 +308,7 @@ pblapply(seq(histList), function(i, histList) {
   mark <- names(histList)[i]
   fls <- histList[[i]]$links
   message(mark)
-
+  
   downnames <- pbapply::pbsapply(fls, function(fl) {
     downname <- paste0("tmp/", basename(fl))
     if (! file.exists(gsub(downname, pattern =  "(.+)\\.gz", replacement =  "\\1"))) {
@@ -393,7 +393,7 @@ sapply(names(genomes), function(genome) {
 
 # Collate Skewr results
 hg38_skewr <- read_tsv("misc-data/SkewR/skewr_res_hg38/probBedFile.bed", 
-         col_names = c("chrom", "start", "end", "type", "score", "strand"), show_col_types = FALSE) %>%
+                       col_names = c("chrom", "start", "end", "type", "score", "strand"), show_col_types = FALSE) %>%
   mutate(db = "skewr") %>%
   dplyr::select(chrom, start, end, strand, type, db)
 mm10_skewr <- read_tsv("misc-data/SkewR/skewr_res_mm10/probBedFile.bed", show_col_types = FALSE,
@@ -418,7 +418,7 @@ rbps <- gsub(fls, pattern = ".+//([a-zA-Z0-9]+)\\.bed\\.gz", replacement = "\\1"
 names(fls) <- rbps
 tocheck <- rbps[which(! rbps %in% unique(tfbs$type))]
 toProcess <- tocheck[! grepl(tocheck, pattern = "[a-z]+|^ENS|CONSTR|TAIR|CADAN|DRAFT|^TVAG|^ANIA|^RO3|^MAL|^NCU|STARP|^CG[0-9]+") &
-        tocheck %in% geneshg38]
+                       tocheck %in% geneshg38]
 fls <- fls[toProcess]
 RBPpred <- pblapply(seq(fls), function(i) {
   fl <- fls[i]
@@ -625,6 +625,68 @@ a_ <- lapply(names(genomes), function(genome) {
       write_csv(outname, progress = FALSE)
   })
   return(NULL)
+})
+
+
+# Save as RDA
+# Obtain the annotation paths from local
+annot_pat <- "([a-zA-Z0-9]+)/([a-zA-Z0-9_ \\-]+)\\.csv"
+annots <- tibble(Key = list.files("../RLBase-data/misc-data/annotations/", recursive = TRUE)) %>%
+  dplyr::filter(grepl(Key, pattern = annot_pat)) %>%
+  dplyr::mutate(genome = gsub(Key, pattern = annot_pat, replacement = "\\1"),
+                db = gsub(Key, pattern = annot_pat, replacement = "\\2")) 
+
+# Download into R environment as a list
+annotationLst <- lapply(
+  unique(annots$genome),
+  function(genome) {
+    message(genome)
+    annotGen <- dplyr::filter(annots, genome == {{ genome }})
+    annotations <- pbapply::pblapply(
+      seq(nrow(annotGen)), 
+      function(i) {
+        fl <- annotGen$Key[i]
+        readr::read_csv(
+          paste0("../RLBase-data/misc-data/annotations/", fl), 
+          show_col_types = FALSE, 
+          progress = FALSE
+        )
+      }
+    )
+    names(annotations) <- annotGen$db
+    annotations
+  }
+) 
+names(annotationLst) <- unique(annots$genome)
+annotationLst2 <- lapply(names(annotationLst), function(genome) {
+  annotationGen <- annotationLst[[genome]]
+  # Flatten annotations into tbl list
+  subpat <- "(.+)__(.+)__(.+)"
+  message(" - - Preparing annotations...")
+  annots <- lapply(annotationGen, FUN = function(x) {
+    if ("tbl" %in% class(x)) {
+      x
+    } else {
+      dplyr::bind_rows(x)
+    }
+  }) %>% 
+    dplyr::bind_rows() %>%
+    dplyr::mutate(
+      comb = gsub(.data$name, pattern = subpat, 
+                  replacement = "\\1__\\2", perl=TRUE)
+    ) %>% dplyr::group_by(.data$comb) %>%
+    {setNames(dplyr::group_split(.), dplyr::group_keys(.)[[1]])}
+})
+names(annotationLst2) <- names(annotationLst)
+annotations <- annotationLst2
+annotations$hg38 <- annotationLst2$hg38[! names(annotationLst2$hg38) %in% c("DNaseHS__DNaseHS")]
+annotationLst <- annotations
+lapply(names(annotationLst), function(genome) {
+  annotations <- annotationLst[[genome]]
+  annotations <- lapply(annotations, function(x) {
+    dplyr::select(x, -comb)
+  })
+  save(annotations, file = paste0("../RLBase-data/misc-data/annotations/annotations_", genome, ".rda"), compress="xz")
 })
 
 message("Done")

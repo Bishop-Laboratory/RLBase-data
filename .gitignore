@@ -10,7 +10,9 @@ R-package/RSeq_out
 R-package/run_vars.json
 RSeq_out*
 *.fastq
+rlbase-data/rlpipes-out/datadump/
 *.bam
+.Rsub*
 **/rlbase-data/**/*.tsv
 !rlbase-data/rlbase_samples.tsv
 **/rlbase-data/**/*.csv

@@ -8,7 +8,9 @@ pbo <- pboptions(type="txt")
 MANIFEST <- "rlbase-data/rlpipes-out/config.tsv"
 MANIFEST_FINAL <- "rlbase-data/rlbase_samples.tsv"
 RLFSRDA <- "rlbase-data/misc/rlfsRes.rda"
-TODISCARD <- "misc-data/todiscard.rda"
+TODISCARD <- "misc-data/model/todiscard.rda"
+PREPMODEL <- "misc-data/model/prepFeatures.rda"
+FFTMODEL <- "misc-data/model/fftModel.rda"
 
 # Load the rlfsRes
 load(RLFSRDA)
@@ -16,14 +18,19 @@ load(RLFSRDA)
 # Load the difficult-to-classify ones
 load(TODISCARD)
 
+# Load all the models
+load(PREPMODEL)
+load(FFTMODEL)
+
 # Get the predictions
-pred <- pbapply::pblapply(rlfsRes, predictCondition)
+pred <- pbapply::pblapply(rlfsRes, predictCondition,
+                          prepFeatures=prepFeatures, fftModel=fftModel)
 
 # Extract label predicted
 verd <- sapply(pred, purrr::pluck, "Verdict")
 
 # Combine results with sample data
-manifest <- readr::read_tsv(MANIFEST)
+manifest <- readr::read_tsv(MANIFEST, show_col_types = FALSE)
 if ("verdict" %in% colnames(manifest)) {
   manifest <- select(manifest, -verdict)
 }
@@ -32,7 +39,9 @@ manifest <- left_join(manifest,
                         experiment = names(verd),
                         verdict = verd
                       )) %>%
-  mutate(discarded = experiment %in% discard) %>%
+  mutate(discarded = experiment %in% {{ discard }}) %>%
   filter((mode == "RNA-Seq" & is.na(verdict)) | mode != "RNA-Seq")
 
 readr::write_tsv(manifest, MANIFEST_FINAL)
+
+message("Done")

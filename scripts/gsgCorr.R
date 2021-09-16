@@ -115,4 +115,4 @@ gsSignalRLBase <- dplyr::bind_rows(resLst) %>%
 
 save(gsSignalRMapDB, file = "misc-data/gsSignalRLBase.rda", compress = "xz")
 
-
+message("Done")

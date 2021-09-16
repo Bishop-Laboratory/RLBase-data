@@ -29,14 +29,23 @@ peaktbl <- tibble(
 )
 
 # Run annotations
-annotationLst <- RLSeq::annotations
 dir.create("../RLBase-data/tmp/annotatedPeaks", showWarnings = FALSE)
+load("misc-data/annotations/annotations_hg38.rda")
+annotations_hg38 <- annotations
+load("misc-data/annotations/annotations_mm10.rda")
+annotations_mm10 <- annotations
+annotationLst <- list(
+  "hg38" = annotations_hg38,
+  "mm10" = annotations_mm10
+)
+
+message("Annotating peaks...")
 resAnno <- pblapply(seq(peaktbl$experiment), function(i) {
   peak <- peaktbl$peakfile[i] %>%
     regioneR::toGRanges()
   if (! file.exists(paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))) {
     anno <- RLSeq::featureEnrich(peaks = peak, genome = peaktbl$genome[i],
-                                 annotations =  annotationLst, cores = CORES) %>%
+                                 annotations =  annotationLst[[peaktbl$genome[i]]], cores = CORES) %>%
       mutate(experiment = peaktbl$experiment[i])
     save(anno, file = paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))
   } else {
@@ -54,7 +63,7 @@ system(paste0("xz -f ", OUTANNO))
 
 # Repeat the same procedure using the RLRegions
 opts <- c("All", "dRNH", "S96")
-res <- lapply(opts, function(opt) {
+res <- pblapply(opts, function(opt) {
   message(opt)
   gpat <- "(.+):(.+)\\-(.+):(.+)"
   
@@ -73,7 +82,7 @@ res <- lapply(opts, function(opt) {
   # Perform feature enrichment
   gr %>%
     RLSeq::featureEnrich(genome = "hg38",
-                         annotations = annotationLst,
+                         annotations = annotationLst[["hg38"]],
                          cores = CORES) %>%
     mutate(opt = !! opt) 
 }) %>% bind_rows()

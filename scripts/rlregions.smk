@@ -8,8 +8,9 @@ import pandas as pd
 
 # Final outputs
 outputs = expand("rlregions/rlregions_{group}{ext}", group=['All', 'S96', 'dRNH'], ext=[
-  '.narrowPeak', '.bw', '.csv', '_signal.tsv', ".bed"
+  '.narrowPeak', '.csv', '_signal.tsv', ".bed"
 ])
+outputs = outputs + expand("rlregions/rlregions_{group}{ext}", group=['S96', 'dRNH'], ext=[".bw"])
 
 ########################################################################################################################
 ############################################   Helper Functions   ######################################################
@@ -50,7 +51,15 @@ rule clean_rlregions:
     manifest=config['manifest'],
     blacklist=config['blacklist']
   script: "finalizeRLRegions.R"
+  
 
+rule get_union_peaks:
+  input: 
+    peaks=expand("rlregions/rlregions_{group}.narrowPeak", group=['dRNH', 'S96']),
+    manifests=expand("rlregions/hg38_manifest_{group}.csv", group=['dRNH', 'S96'])
+  output: "rlregions/rlregions_All.narrowPeak"
+  threads: workflow.cores
+  script: "peakUnion.R"
 
 rule callpeak_from_bdg:
   input: "rlregions/counts.sorted_{group}.bdg"

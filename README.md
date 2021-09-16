@@ -42,7 +42,7 @@ conda activate rlbaseData
 ```shell
 pip install -e ../RLPipes/
 R -e "BiocManager::install(c('EnsDb.Hsapiens.v86', 'EnsDb.Mmusculus.v79'))"
-R -e "install.packages('ggprism', repos = 'http://cran.us.r-project.org')"
+R -e "install.packages(c('ggprism', 'tableone'), repos = 'http://cran.us.r-project.org')"
 R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
 ```
 
@@ -142,7 +142,7 @@ find misc-data/annotations/ -name "*.csv" -exec gzip -f {} \;
 
 ```shell
 aws s3 cp misc-data/available_genomes.rda s3://rlbase-data/misc/
-aws s3 sync misc-data/rlfs/*.bed s3://rlbase-data/rlfs-beds/
+aws s3 cp misc-data/rlfs/ s3://rlbase-data/rlfs-beds/ --recursive --exclude "*" --include "*.bed" --exclude "*/*"
 aws s3 sync misc-data/annotations/ s3://rlbase-data/annotations/
 ```
 
@@ -151,11 +151,9 @@ aws s3 sync misc-data/annotations/ s3://rlbase-data/annotations/
 This part of the protocol requires a catalog of publicly-available R-loop-mapping
 samples, hand-curated in the manner described in the RLSuite publication. 
 
-The previous catalog is available [here](https://github.com/Bishop-Laboratory/RLBase-data/raw/main/rlbase-data/rlbase_catalog.xlsx)
-
 The following steps are performed to generate (or update) the database:
 
-1. Prepare catalog of publicly-available samples. The current catalog can serve as a template.
+1. Prepare catalog of publicly-available samples. The [current catalog](https://github.com/Bishop-Laboratory/RLBase-data/raw/main/rlbase-data/rlbase_catalog.xlsx) can serve as a template.
 
 2. Make pipeline manifests from catalog
 
@@ -193,7 +191,7 @@ RLPipes check $RLPIPESOUT --bwamem2 --noreport --tsv
 7. Run the pipeline
 
 ```shell
-CORES=179
+CORES=44
 RLPipes run $RLPIPESOUT --bwamem2 --noreport --tsv -t $CORES
 ```
 
@@ -202,7 +200,7 @@ RLPipes run $RLPIPESOUT --bwamem2 --noreport --tsv -t $CORES
 ```shell
 cp -r $RLPIPESOUT/quant $RLPIPESOUT/quant_save
 cd $RLPIPESOUT/quant_save
-find . -type d -maxdepth 1 -mindepth 1 -exec tar cfJ {}.tar.xz {} \;
+find . -type d -maxdepth 1 -mindepth 1 -print0 | parallel -0 tar cfJ {}.tar.xz {}
 find . -type d -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
 cd $RLBASEDIR
 ```
@@ -218,12 +216,18 @@ find $RLPIPESOUT/peaks -type f -maxdepth 1 -mindepth 1 -name "*.broadPeak" -exec
 
 ```shell
 cd $RLPIPESOUT
-tar cfJ peaks.tar.xz peaks/
-tar cfJ coverage.tar.xz coverage/
-tar cfJ quant.tar.xz quant/
-tar cfJ logs.tar.xz logs/
-tar cfJ fastq_stats.tar.xz fastq_stats/
-tar cfJ bam_stats.tar.xz bam_stats/
+
+## TO RUN 
+
+tar cfJ peaks.tar.xz peaks/ &
+tar cfJ coverage.tar.xz coverage/ &
+
+##############
+
+tar cfJ quant.tar.xz quant/ &
+tar cfJ logs.tar.xz logs/ &
+tar cfJ fastq_stats.tar.xz fastq_stats/ &
+tar cfJ bam_stats.tar.xz bam_stats/ &
 mkdir datadump
 find . -type f -maxdepth 1 -name "*.tar.xz" -exec mv {} datadump/ \;
 cp config.tsv datadump/
@@ -235,12 +239,19 @@ cp ../rlbase_manifest.csv datadump/
 11. Upload datasets to aws (requires admin privledges)
 
 ```shell
-aws s3 sync $RLPIPESOUT/coverage/ s3://rlbase-data/coverage/
-aws s3 sync $RLPIPESOUT/peaks_save/ s3://rlbase-data/peaks/
-aws s3 sync $RLPIPESOUT/quant_save/ s3://rlbase-data/quant/
-aws s3 sync $RLPIPESOUT/bam_stats/ s3://rlbase-data/bam_stats/
-aws s3 sync $RLPIPESOUT/fastq_stats/ s3://rlbase-data/fastq_stats/
-aws s3 sync $RLPIPESOUT/datadump/ s3://rlbase-data/datadump/
+cd $RLBASEDIR
+aws s3 sync --size-only $RLPIPESOUT/coverage/ s3://rlbase-data/coverage/
+aws s3 sync --size-only $RLPIPESOUT/peaks_save/ s3://rlbase-data/peaks/
+aws s3 sync --size-only $RLPIPESOUT/quant_save/ s3://rlbase-data/quant/
+aws s3 sync --size-only $RLPIPESOUT/bam_stats/ s3://rlbase-data/bam_stats/
+aws s3 sync --size-only $RLPIPESOUT/fastq_stats/ s3://rlbase-data/fastq_stats/
+
+
+
+# TO RUN
+
+
+aws s3 sync --size-only $RLPIPESOUT/datadump/ s3://rlbase-data/datadump/
 ```
 
 12. Store .bam files (we used BOX for this part)
@@ -248,6 +259,11 @@ aws s3 sync $RLPIPESOUT/datadump/ s3://rlbase-data/datadump/
 ```shell
 FTPSITE="ftp.box.com"
 REMOTEDIR="RLBase-Archive/"
+
+
+# TO RUN 
+
+
 lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
 ```
 
@@ -261,12 +277,12 @@ Rscript scripts/rlfsAnalyze.R $RLPIPESOUT/peaks $RLPIPESOUT/rlfs_rda $CORES
 14. Upload to AWS
 
 ```shell
-aws s3 sync $RLPIPESOUT/rlfs_rda/ s3://rlbase-data/rlfs_rda/
+aws s3 sync --size-only $RLPIPESOUT/rlfs_rda/ s3://rlbase-data/rlfs_rda/
 ```
 
-## Build discriminator model
+## Downstream data processing
 
-0. If you didn't do the above, then download the data needed for this:
+0. If you didn't do the previous steps, then download the data needed for this part:
 
 ```shell
 RLPIPESOUT="rlbase-data/rlpipes-out/"
@@ -279,46 +295,24 @@ aws s3 sync s3://rlbase-data/fastq_stats/ $RLPIPESOUT/fastq_stats/
 aws s3 sync s3://rlbase-data/bam_stats/ $RLPIPESOUT/bam_stats/ 
 ```
 
+### Build discriminator model
 
-1. Get the samples for model buidling
-
-TODO: NEED TO Add condition key for NEG, POS, NULL
-TODO: Need to highlight the new samples and have another column previously determined vs new
-TODO: Need a reference for judging whether to discard -- show the ideals
-TODO: Maybe use a PCA instead of the fourier transform graph
-TODO: Maybe take out the annotation filter
+1. Run the interactive model-building app (requires AWS privileges)
 
 ```shell
 CONFIG=$RLPIPESOUT/config.tsv
 HOST="0.0.0.0"
 PORT=4848
-Rscript scripts/selectSamples.R $CONFIG $HOST $PORT
+Rscript scripts/models.R $CONFIG $HOST $PORT
 ```
 
-2. Then build the model
-
-```shell
-Rscript scripts/buildModel.R
-```
-
-3. Re-build RLSeq with new data
-
-**TODO**: This part needs to be for the ExperimentHub approach such that the model
-is not stored in the RLSeq package.
-
-```shell
-cp misc-data/fftModel.rda ../RLSeq/data/
-cp misc-data/prepFeatures.rda ../RLSeq/data/
-R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
-```
-
-4. Classify samples
+2. Classify all samples
 
 ```shell
 Rscript scripts/classifySamples.R
 ```
 
-## Get R-loop consensus
+### Get R-loop consensus
 
 1. Select final peakset
 
@@ -326,20 +320,20 @@ Rscript scripts/classifySamples.R
 Rscript scripts/prepareConsensus.R
 ```
 
-3. Run the R-loop consensus pipeline
+2. Run the R-loop consensus pipeline
 
 ```shell
 CORES=44
 MANIFEST="rlbase_samples.tsv"
 BLACKLIST="https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
 snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --dryrun --config manifest=$MANIFEST blacklist=$BLACKLIST # Verify
-snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --config manifest=$MANIFEST blacklist=$BLACKLIST --dag | dot -Tpng > misc-data/rlregions.png  # DAG
+snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --config manifest=$MANIFEST blacklist=$BLACKLIST --dag | dot -Tpng > rlbase-data/rlregions/dag.png  # DAG
 snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --config manifest=$MANIFEST blacklist=$BLACKLIST --cores $CORES # Run it
 ```
 
-## Other
+### Other
 
-3. Annotate peaks (genomic features and genes)
+1. Annotate peaks (genomic features and genes)
 
 ```shell
 CORES=44
@@ -348,12 +342,12 @@ OUTANNO="rlbase-data/misc/annotatedPeaks.tsv"
 Rscript scripts/annotatePeaks.R $PEAKS $OUTANNO $CORES
 ```
 
-4. Build the new `gene_expression` table and calculate correlations. 
+2. Build the new `gene_expression` table and calculate correlations. 
 
 ```shell
 # Creates misc/gene_expression.rda
 MANIFEST="rlbase-data/rlbase_samples.tsv"
-GENE_EXP_TABLE="rlbase-data/misc/gene_expression.csv"
+GENE_EXP_TABLE="rlbase-data/misc/gene_expression.rda"
 QUANTDIR="rlbase-data/rlpipes-out/quant/"
 Rscript scripts/buildExpression.R $QUANTDIR $GENE_EXP_TABLE $MANIFEST
 ```
@@ -365,46 +359,23 @@ Rscript scripts/buildExpression.R $QUANTDIR $GENE_EXP_TABLE $MANIFEST
 Rscript scripts/rlregionsToFeatures.R
 ```
 
-3. Build the new correlation matrix. 
+4. Build the new correlation matrix. 
 
+```shell
+Rscript scripts/gsgCorr.R
+```
 
+5. Get RLRegion count matrix
 
+```shell
+CORES=44
+Rscript scripts/rlregionCountMat.R $CORES 1
+```
 
-4. Build tables for DB
-
-5. Update RLSeq with new data
-
-6. Generate reports
-
-
-
-X. Build the RLHub 
+6. Build/Update the RLHub 
 
 ```shell
 Rscript scripts/prepRLHub.R
 aws s3 sync misc-data/rlhub/ s3://rlbase-data/rlhub/
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

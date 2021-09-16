@@ -5,27 +5,10 @@ library(pbapply)
 pbo <- pboptions(type="txt") 
 
 # Get annots
-annot_pat <- "([a-zA-Z0-9]+)/([a-zA-Z0-9_ \\-]+)\\.csv\\.gz"
-annots <- tibble(Key = list.files("misc-data/annotations/", recursive = TRUE)) %>%
-  dplyr::filter(grepl(Key, pattern = annot_pat)) %>%
-  dplyr::mutate(genome = gsub(Key, pattern = annot_pat, replacement = "\\1"),
-                db = gsub(Key, pattern = annot_pat, replacement = "\\2")) %>%
-  filter(genome == "hg38")
+load("misc-data/annotations/annotations_hg38.rda")
+annotationsTbl <- bind_rows(annotations)
 
-# Download into R environment as a list
-annotations <- pbapply::pblapply(
-  seq(nrow(annots)), 
-  function(i) {
-    fl <- annotGen$Key[i]
-    readr::read_csv(
-      paste0("misc-data/annotations/", fl), 
-      show_col_types = FALSE, 
-      progress = FALSE
-    ) 
-  }
-) %>% bind_rows()
-
-lapply(opts, function(opt) {
+a_ <- pblapply(opts, function(opt) {
   message(opt)
   
   # Get rlr
@@ -40,7 +23,7 @@ lapply(opts, function(opt) {
     dplyr::select(chrom, start, end, strand, name=rlregion)
   
   # Overlap
-  intsct <- valr::bed_intersect(rlregions, annotations)
+  intsct <- valr::bed_intersect(rlregions, annotationsTbl)
   intsct %>% 
     dplyr::select(
       rlregion=name.x, annotation=name.y
@@ -48,5 +31,5 @@ lapply(opts, function(opt) {
     write_csv(paste0("rlbase-data/misc/rlregions_", opt, "_annotations.csv"), progress = FALSE)
 })
 
-
+message("Done")
 

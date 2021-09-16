@@ -25,7 +25,7 @@ system(paste0("rm -rf ", RLFINDIR)); dir.create(RLFINDIR, showWarnings = TRUE)
 system(paste0("rm -rf ", RL38DIR)); dir.create(RL38DIR, showWarnings = TRUE)
 
 # Get the manifest
-manifest <- read_tsv(MANIFEST) %>%
+manifest <- read_tsv(MANIFEST, show_col_types = FALSE) %>%
   unique()
 
 # Get the number of peaks meeting a cutoff of p<1E5
