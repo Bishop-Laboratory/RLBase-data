@@ -376,6 +376,6 @@ Rscript scripts/rlregionCountMat.R $CORES 1
 
 ```shell
 Rscript scripts/prepRLHub.R
-aws s3 sync misc-data/rlhub/ s3://rlbase-data/rlhub/
+find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
 ```
 

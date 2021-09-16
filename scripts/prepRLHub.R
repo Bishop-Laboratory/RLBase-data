@@ -18,36 +18,36 @@ file.copy("misc-data/annotations/annotations_mm10.rda",
 ## 2. RL Regions
 message("- 2. RL-Regions")
 dir.create("misc-data/rlhub/rlregions/", showWarnings = FALSE)
-opts <- c("All", "dRNH", "S96")
-pblapply(opts, function(opt) {
-  # Get the rlregions table
-  fl <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv")
-  outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_table.rda")
-  rlregions_table <- read_tsv(fl, show_col_types=FALSE, progress=FALSE)
+opt <- "All"
+# Get the rlregions table
+fl <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv")
+# outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_table.rda")
+outtbl <- paste0("misc-data/rlhub/rlregions/rlregions_table.rda")
+rlregions_table <- read_tsv(fl, show_col_types=FALSE, progress=FALSE)
+
+expcor <- paste0("rlbase-data/misc/", opt, "_rlExpCorr.tsv")
+if (opt != "dRNH") {
+  exp <- read_tsv(expcor, show_col_types = FALSE, progress = FALSE)
+  rlregions_table <- left_join(rlregions_table, exp) %>%
+    dplyr::select(-chrom) 
+  save(rlregions_table, compress = "xz", file = outtbl)
+} else {
+  rlregions_table <- rlregions_table %>%
+    mutate(
+      corrR = NA,
+      corrPVal = NA,
+      corrPAdj = NA
+    ) 
+  save(rlregions_table, compress = "xz", file = outtbl)
   
-  expcor <- paste0("rlbase-data/misc/", opt, "_rlExpCorr.tsv")
-  if (opt != "dRNH") {
-    exp <- read_tsv(expcor, show_col_types = FALSE, progress = FALSE)
-    rlregions_table <- left_join(rlregions_table, exp) %>%
-      dplyr::select(-chrom) 
-    save(rlregions_table, compress = "xz", file = outtbl)
-  } else {
-    rlregions_table <- rlregions_table %>%
-      mutate(
-        corrR = NA,
-        corrPVal = NA,
-        corrPAdj = NA
-      ) 
-    save(rlregions_table, compress = "xz", file = outtbl)
-      
-  }
-  
-  # Get the annotated rlregions table
-  outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_annotations.rda")
-  fl <- paste0("rlbase-data/misc/rlregions_", opt, "_annotations.csv")
-  rlregions_annotated <- read_csv(fl, show_col_types = FALSE, progress = FALSE)
-  save(rlregions_annotated, compress = "xz", file = outtbl)
-})
+}
+
+# Get the annotated rlregions table
+# outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_annotations.rda")
+outtbl <- paste0("misc-data/rlhub/rlregions/rlregions_annotations.rda")
+fl <- paste0("rlbase-data/misc/rlregions_", opt, "_annotations.csv")
+rlregions_annotated <- read_csv(fl, show_col_types = FALSE, progress = FALSE)
+save(rlregions_annotated, compress = "xz", file = outtbl)
 
 ## 3. RL Samples
 message("- 3. RL-Samples")
