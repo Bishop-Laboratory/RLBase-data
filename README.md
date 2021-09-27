@@ -372,14 +372,7 @@ CORES=44
 Rscript scripts/rlregionCountMat.R $CORES 1
 ```
 
-6. Build/Update the RLHub 
-
-```shell
-Rscript scripts/prepRLHub.R
-find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
-```
-
-7. Rebuild all RLRanges and HTML notesbooks
+6. Rebuild all RLRanges and HTML notebooks
 
 ```shell
 CORES=44
@@ -387,6 +380,15 @@ Rscript scripts/runRLSeq.R $CORES
 aws s3 sync misc-data/reports s3://rlbase-data/reports
 aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
 ```
+
+
+7. Build/Update the RLHub 
+
+```shell
+Rscript scripts/prepRLHub.R
+find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
+```
+
 
 
 

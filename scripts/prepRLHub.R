@@ -135,6 +135,24 @@ rlsamples <- expToCond %>%
     rlranges_rds_s3 = paste0("rlranges/", rlsample, "_", genome, ".rds"),
     rlfs_rda_s3 = paste0("rlfs_rda/", rlsample, "_", genome, ".rlfs.rda")
   ) 
+
+# Clean up predictions (some ended up as NAs...)
+rlsamples$verdict <- pbsapply(seq(rlsamples$rlsample), function(i) {
+  samp <- rlsamples$rlsample[i]
+  gen <- rlsamples$genome[i]
+  if (file.exists(file.path(
+    "misc-data", "rlranges", paste0(samp, "_", gen, ".rds")
+  ))) {
+    rlr <- readRDS(file.path(
+      "misc-data", "rlranges", paste0(samp, "_", gen, ".rds")
+    ))
+    rlr@metadata$results@predictRes$Verdict
+  } else {
+    NA
+  }
+})
+
+# Save
 save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz")
 
 ## 4. Get the RLFS res
