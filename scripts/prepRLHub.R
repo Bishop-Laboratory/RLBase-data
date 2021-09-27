@@ -137,7 +137,7 @@ rlsamples <- expToCond %>%
   ) 
 
 # Clean up predictions (some ended up as NAs...)
-rlsamples$verdict <- pbsapply(seq(rlsamples$rlsample), function(i) {
+rlres <- pblapply(seq(rlsamples$rlsample), function(i) {
   samp <- rlsamples$rlsample[i]
   gen <- rlsamples$genome[i]
   if (file.exists(file.path(
@@ -146,11 +146,23 @@ rlsamples$verdict <- pbsapply(seq(rlsamples$rlsample), function(i) {
     rlr <- readRDS(file.path(
       "misc-data", "rlranges", paste0(samp, "_", gen, ".rds")
     ))
-    rlr@metadata$results@predictRes$Verdict
+    rlr
   } else {
     NA
   }
 })
+names(rlres) <- rlsamples$rlsample
+
+# Get verdict
+rlsamples$verdict <- pbsapply(
+  rlres, function(rlr) {
+    if (! is.na(rlr)) {
+      rlr@metadata$results@predictRes$Verdict
+    } else {
+      NA
+    }
+  }
+)
 
 # Save
 save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz")
@@ -159,37 +171,22 @@ save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz
 message("- 4. RLFS-res")
 dir.create("misc-data/rlhub/rlfsres", showWarnings = FALSE)
 
-# Magic
-MANIFEST <- "rlbase-data/rlpipes-out/config.tsv"
-MANIFEST_FINAL <- "rlbase-data/rlbase_samples.tsv"
-RLFSRDA <- "rlbase-data/misc/rlfsRes.rda"
-TODISCARD <- "misc-data/todiscard.rda"
-
-# Load the rlfsRes
-load(RLFSRDA)
-
-# Load the models
-load("misc-data/model/fftModel.rda")
-load("misc-data/model/prepFeatures.rda")
-
-# Get the predictions
-rlfsPred <- pbapply::pblapply(rlfsRes, predictCondition, 
-                              prepFeatures=prepFeatures, fftModel=fftModel)
-
-# Clean large function
-rlfsData <- lapply(rlfsRes, FUN = function(x) {
-  x$perTestResults$`regioneR::numOverlaps`$evaluate.function <- NULL
-  x
+# Also fix the rlfs_rda
+rlfsres <- pbsapply(seq(rlres), function(i) {
+  rlr <- rlres[[i]]
+  if (! is.na(rlr)) {
+    lst <- list(
+      rlfsPred=rlr@metadata$results@predictRes,
+      rlfsData=rlr@metadata$results@rlfsRes
+    )
+    lst$rlfsData$perTestResults$`regioneR::numOverlaps`$evaluate.function <- NULL
+    lst$rlfsData$perTestResults$`regioneR::numOverlaps`$randomize.function <- NULL
+    lst
+  } else {
+    NA
+  }
 })
-
-# Combine
-rlfsres <- lapply(names(rlfsData), function(x) {
-  list(
-    "rlfsData" = rlfsData[[x]],
-    "rlfsPred" = rlfsPred[[x]]
-  )
-})
-names(rlfsres) <- names(rlfsData)
+names(rlfsres) <- names(rlres)
 
 # Save
 save(rlfsres, file = "misc-data/rlhub/rlfsres/rlfsres.rda", compress = "xz")
