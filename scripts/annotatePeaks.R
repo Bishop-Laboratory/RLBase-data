@@ -40,25 +40,25 @@ annotationLst <- list(
 )
 
 message("Annotating peaks...")
-resAnno <- pblapply(seq(peaktbl$experiment), function(i) {
+resAnno <- parallel::mclapply(seq(peaktbl$experiment), function(i) {
   peak <- peaktbl$peakfile[i] %>%
     regioneR::toGRanges()
   if (! file.exists(paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))) {
-    anno <- RLSeq::featureEnrich(peaks = peak, genome = peaktbl$genome[i],
-                                 annotations =  annotationLst[[peaktbl$genome[i]]], cores = CORES) %>%
+    anno <- RLSeq::featureEnrich(peaks = peak, genome = peaktbl$genome[i], 
+                                 annotations =  annotationLst[[peaktbl$genome[i]]], cores = 1) %>%
       mutate(experiment = peaktbl$experiment[i])
     save(anno, file = paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))
+    anno
   } else {
     load(paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))
     anno
   }
-}) %>% dplyr::bind_rows()
+}, mc.cores = CORES) %>% dplyr::bind_rows()
+
 stopifnot(nrow(resAnno) > 10)
 save(resAnno,
      file = gsub(OUTANNO, pattern = "\\.tsv", replacement = ".rda"),
      compress = "xz")
-write_tsv(resAnno, OUTANNO)
-system(paste0("xz -f ", OUTANNO))
 
 
 # Repeat the same procedure using the RLRegions
@@ -90,12 +90,4 @@ res <- pblapply(opts, function(opt) {
 save(res,
      file = gsub(OUTANNO, pattern = "\\.tsv", replacement = ".rlregions.rda"),
      compress = "xz")
-
-
-
-
-
-
-
-
 

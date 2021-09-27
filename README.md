@@ -331,7 +331,7 @@ snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --cores $CORES --con
 snakemake --snakefile scripts/rlregions.smk -d rlbase-data/ --config manifest=$MANIFEST blacklist=$BLACKLIST --cores $CORES # Run it
 ```
 
-### Other
+### Update processed datasets
 
 1. Annotate peaks (genomic features and genes)
 
@@ -378,4 +378,15 @@ Rscript scripts/rlregionCountMat.R $CORES 1
 Rscript scripts/prepRLHub.R
 find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
 ```
+
+7. Rebuild all RLRanges and HTML notesbooks
+
+```shell
+CORES=44
+Rscript scripts/runRLSeq.R $CORES
+aws s3 sync misc-data/reports s3://rlbase-data/reports
+aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
+```
+
+
 

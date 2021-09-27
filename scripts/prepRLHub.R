@@ -10,6 +10,51 @@ AWS_HTTPS_URL <- "https://rlbase-data.s3.amazonaws.com/"
 ## 1. Curated Genomic Annotations
 message("- 1. Annotations")
 dir.create("../RLBase-data/misc-data/rlhub/annotations", showWarnings = FALSE)
+
+# Get the basic version of annotations
+a_ <- pblapply(
+  c("hg38", "mm10"), 
+  function(genome) {
+    
+    # Wrangle file paths
+    fl <- paste0("misc-data/annotations/annotations_", genome, ".rda")
+    annots_prime <- paste0("misc-data/rlhub/annotations/annotations_primary_", genome, ".rda")
+    annots_all <- paste0("misc-data/rlhub/annotations/annotations_full_", genome, ".rda")
+    
+    # Decide which databases to keep in primary annotations
+    db_to_keep <- c("CpG_Islands", "Encode_CREs", "G4Qpred__G4Pred", 
+                    "knownGene_RNAs", "PolyA", "Repeat_Masker", "skewr",
+                    "snoRNA_miRNA_scaRNA", "Transcript_Features", "tRNAs")
+    pat <- "(.+)__(.+)"
+    load(fl)
+    keep <- which(gsub(names(annotations), pattern = pat, replacement = "\\1") %in% db_to_keep)
+    
+    # Load annotations
+    message("loading")
+    annotations <- lapply(
+      annotations, 
+      function(x) {
+        mutate(x,
+               id = as.numeric(gsub(
+                 x$name, pattern = ".+__.+__([0-9]+)$", replacement = "\\1"
+               ))) %>%
+          select(-name)
+      }
+    )
+    
+    # Subset annotations to get primary
+    annotations_primary <- annotations[keep]
+    annotations_all <- annotations
+    
+    # Save 
+    message("Save primary")
+    save(annotations_primary, file = annots_prime, compress = "xz")
+    message("Save all")
+    save(annotations_all, file = annots_all, compress = "xz")
+    
+  }
+)
+
 file.copy("misc-data/annotations/annotations_hg38.rda",
           "misc-data/rlhub/annotations/annotations_hg38.rda", overwrite = TRUE)
 file.copy("misc-data/annotations/annotations_mm10.rda",
@@ -86,8 +131,8 @@ rlsamples <- expToCond %>%
     peaks_s3 = paste0("peaks/", rlsample, "_", genome, ".broadPeak"),
     fastq_stats_s3 = paste0("fastq_stats/", rlsample, "_", genome, "__fastq_stats.json"),
     bam_stats_s3 = paste0("bam_stats/", rlsample, "_", genome, "__bam_stats.txt"),
-    report_html_s3 = paste0("report/html/", rlsample, "_", genome, ".html"),
-    report_rda_s3 = paste0("report/rda/", rlsample, "_", genome, ".rda"),
+    report_html_s3 = paste0("reports/", rlsample, "_", genome, ".html"),
+    rlranges_rds_s3 = paste0("rlranges/", rlsample, "_", genome, ".rds"),
     rlfs_rda_s3 = paste0("rlfs_rda/", rlsample, "_", genome, ".rlfs.rda")
   ) 
 save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz")
@@ -154,7 +199,7 @@ dir.create("misc-data/rlhub/feature_enrichment/", showWarnings = FALSE)
 # Feature enrichment of individual peaks
 load("rlbase-data/misc/annotatedPeaks.rda")
 feature_enrichment_per_sample <- resAnno
-save(feature_enrichment_per_sample, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_per_sample.rda", compress = "xz")
+save(feature_enrichment_per_sample, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_per_samples.rda", compress = "xz")
 
 # Feature enrichment of RL-Regions
 load("rlbase-data/misc/annotatedPeaks.rlregions.rda")
@@ -169,5 +214,28 @@ file.copy("misc-data/expression/geneexp.rda",
 
 ## 9. RLRegion Counts (CTS, Norm, VST)
 # This done within the rlregionCountMat.R script...
+
+
+## 10. R-Loop binding proteins
+dir.create("misc-data/rlhub/rlbps", showWarnings = FALSE)
+# Update gene symbols and include Entrez IDs
+rlbp <- readr::read_csv("misc-data/R_Loop_Binding_Proteins/Results/COMPARISONS/Combined.Proteins.csv")
+symbs <- AnnotationDbi::select(
+  org.Hs.eg.db::org.Hs.eg.db,
+  keys = AnnotationDbi::keys(org.Hs.eg.db::org.Hs.eg.db),
+  columns = c("ALIAS", "SYMBOL")
+)
+rlbpukn <- rlbp[! rlbp$geneName %in% symbs$SYMBOL,]
+rlbpsym <- rlbp[rlbp$geneName %in% symbs$SYMBOL,]
+rlbps <- inner_join(
+  rlbpukn, symbs, by = c("geneName" = "ALIAS")
+) %>% select(-geneName, -ENTREZID, geneName = SYMBOL) %>%
+  bind_rows(rlbpsym) %>%
+  distinct(geneName, .keep_all = TRUE) %>%
+  relocate(geneName) %>%
+  arrange(desc(combinedScore))
+
+# Save
+save(rlbps, file = "misc-data/rlhub/rlbps/rlbps.rda", compress = "xz")
 
 
