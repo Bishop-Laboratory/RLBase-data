@@ -35,7 +35,10 @@ CORES_TO_USE <- 6
 hg19gs <- rtracklayer::import(GSBED_HG19)
 
 # They were lifted from hg19 to hg38
-chain <- RLSeq:::getChain(genomeFrom = "hg19", genomeTo = "hg38")
+tmp <- tempfile(fileext = ".gz")
+download.file("https://hgdownload.cse.ucsc.edu/goldenpath/hg19/liftOver/hg19ToHg38.over.chain.gz", destfile = tmp)
+R.utils::gunzip(tmp)
+chain <- rtracklayer::import.chain(gsub(tmp, pattern = "^(.+)\\.gz", replacement = "\\1"))
 
 # Lift over
 ranges <- GenomicRanges::reduce(hg19gs)
@@ -113,6 +116,6 @@ gsSignalRLBase <- dplyr::bind_rows(resLst) %>%
 
 ############################
 
-save(gsSignalRMapDB, file = "misc-data/gsSignalRLBase.rda", compress = "xz")
+save(gsSignalRLBase, file = "misc-data/gsSignalRLBase.rda", compress = "xz")
 
 message("Done")

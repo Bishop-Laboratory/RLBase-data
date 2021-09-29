@@ -3,7 +3,7 @@ library(pbapply)
 pbo <- pboptions(type="txt") 
 
 # Helper function for extracting condition type from condition map
-getCondType <- function(mode, condition, condition_map) {
+getlabel <- function(mode, condition, condition_map) {
   modeLgl <- map_lgl(condition_map$Mode, function(x) {
     grepl(mode, pattern = x)
   }) & condition == condition_map$Condition
@@ -50,7 +50,7 @@ fixed <- config %>%
       TRUE ~ genome.y
     )
   ) %>%
-  select(-genome.x, -genome.y) 
+  dplyr::select(-genome.x, -genome.y)
 
 # Get the condition type added in -- write the final manifest
 condTbl <- fixed %>% 
@@ -60,7 +60,7 @@ condTbl$conds <- pbsapply(
   function(i) {
     mode <- condTbl$mode[i]
     condition <- condTbl$condition[i]
-    getCondType(
+    getlabel(
       mode, 
       condition, 
       condition_map
@@ -68,7 +68,7 @@ condTbl$conds <- pbsapply(
   }
 )
 fixed <- condTbl %>%
-  select(experiment, condType=conds) %>%
+  dplyr::select(experiment, label=conds) %>%
   right_join(fixed, by = "experiment") %>%
   mutate(condition = case_when(
     condition == "ActD" ~ "Input",
@@ -77,10 +77,17 @@ fixed <- condTbl %>%
   unique()
 
 # Remove duplicates
-if ("condType.x" %in% colnames(fixed)) {
-  fixed <- select(fixed, -condType.x, -condType.y) %>%
+if ("label.x" %in% colnames(fixed)) {
+  fixed <- dplyr::select(fixed, -label.x, -label.y) %>%
     unique()
 }
+if ("condType" %in% colnames(fixed)) {
+  fixed <- dplyr::select(fixed, -condType) %>% unique()
+}
+fixed <- fixed %>% 
+  mutate(
+  label = ifelse(label == "NULL", "NEG", label)
+)
 
 # Save to file
 write_tsv(fixed, CONFIG)

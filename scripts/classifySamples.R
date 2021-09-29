@@ -23,24 +23,29 @@ load(PREPMODEL)
 load(FFTMODEL)
 
 # Get the predictions
-pred <- pbapply::pblapply(rlfsRes, predictCondition,
-                          prepFeatures=prepFeatures, fftModel=fftModel)
+pred <- pbapply::pblapply(rlfsRes, function(x) {
+  predictCondition(
+    rlfsRes = x,
+    prepFeatures=prepFeatures,
+    fftModel=fftModel
+  )
+})
 
 # Extract label predicted
-verd <- sapply(pred, purrr::pluck, "Verdict")
+verd <- sapply(pred, purrr::pluck, "prediction")
 
 # Combine results with sample data
 manifest <- readr::read_tsv(MANIFEST, show_col_types = FALSE)
-if ("verdict" %in% colnames(manifest)) {
-  manifest <- select(manifest, -verdict)
+if ("prediction" %in% colnames(manifest)) {
+  manifest <- select(manifest, -prediction)
 }
 manifest <- left_join(manifest, 
                       tibble(
                         experiment = names(verd),
-                        verdict = verd
+                        prediction = verd
                       )) %>%
   mutate(discarded = experiment %in% {{ discard }}) %>%
-  filter((mode == "RNA-Seq" & is.na(verdict)) | mode != "RNA-Seq")
+  filter((mode == "RNA-Seq" & is.na(prediction)) | mode != "RNA-Seq")
 
 readr::write_tsv(manifest, MANIFEST_FINAL)
 

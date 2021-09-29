@@ -29,6 +29,9 @@ a_ <- pblapply(
     load(fl)
     keep <- which(gsub(names(annotations), pattern = pat, replacement = "\\1") %in% db_to_keep)
     
+    # Clean up some names
+    names(annotations) <- gsub(names(annotations), pattern = "G4Qpred__G4Pred", replacement = "G4Qpred")
+    
     # Load annotations
     message("loading")
     annotations <- lapply(
@@ -38,7 +41,7 @@ a_ <- pblapply(
                id = as.numeric(gsub(
                  x$name, pattern = ".+__.+__([0-9]+)$", replacement = "\\1"
                ))) %>%
-          select(-name)
+          dplyr::select(-name)
       }
     )
     
@@ -54,12 +57,6 @@ a_ <- pblapply(
     
   }
 )
-
-file.copy("misc-data/annotations/annotations_hg38.rda",
-          "misc-data/rlhub/annotations/annotations_hg38.rda", overwrite = TRUE)
-file.copy("misc-data/annotations/annotations_mm10.rda",
-          "misc-data/rlhub/annotations/annotations_mm10.rda", overwrite = TRUE)
-
 ## 2. RL Regions
 message("- 2. RL-Regions")
 dir.create("misc-data/rlhub/rlregions/", showWarnings = FALSE)
@@ -69,7 +66,6 @@ fl <- paste0("rlbase-data/misc/rlregions_", opt, "_table.tsv")
 # outtbl <- paste0("misc-data/rlhub/rlregions/", opt, "_table.rda")
 outtbl <- paste0("misc-data/rlhub/rlregions/rlregions_table.rda")
 rlregions_table <- read_tsv(fl, show_col_types=FALSE, progress=FALSE)
-
 expcor <- paste0("rlbase-data/misc/", opt, "_rlExpCorr.tsv")
 if (opt != "dRNH") {
   exp <- read_tsv(expcor, show_col_types = FALSE, progress = FALSE)
@@ -92,6 +88,7 @@ if (opt != "dRNH") {
 outtbl <- paste0("misc-data/rlhub/rlregions/rlregions_annotations.rda")
 fl <- paste0("rlbase-data/misc/rlregions_", opt, "_annotations.csv")
 rlregions_annotated <- read_csv(fl, show_col_types = FALSE, progress = FALSE)
+rlregions_annotated$annotation <- gsub(rlregions_annotated$annotation, pattern = "G4Qpred__G4Pred", replacement = "G4Qpred")
 save(rlregions_annotated, compress = "xz", file = outtbl)
 
 ## 3. RL Samples
@@ -137,7 +134,8 @@ rlsamples <- expToCond %>%
   ) 
 
 # Clean up predictions (some ended up as NAs...)
-rlres <- pblapply(seq(rlsamples$rlsample), function(i) {
+
+rlres <- parallel::mclapply(seq(rlsamples$rlsample), function(i) {
   samp <- rlsamples$rlsample[i]
   gen <- rlsamples$genome[i]
   if (file.exists(file.path(
@@ -150,14 +148,14 @@ rlres <- pblapply(seq(rlsamples$rlsample), function(i) {
   } else {
     NA
   }
-})
+}, mc.cores = 44)
 names(rlres) <- rlsamples$rlsample
 
-# Get verdict
-rlsamples$verdict <- pbsapply(
+# Get prediction
+rlsamples$prediction <- pbsapply(
   rlres, function(rlr) {
     if (! is.na(rlr)) {
-      rlr@metadata$results@predictRes$Verdict
+      rlr@metadata$results@predictRes$prediction
     } else {
       NA
     }
@@ -204,7 +202,6 @@ message("- 6. GS Corr")
 dir.create("misc-data/rlhub/gsg_correlation/", showWarnings = FALSE)
 
 load("misc-data/gsSignalRLBase.rda")
-gsSignalRLBase <- gsSignalRMapDB
 save(gsSignalRLBase, file = "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda", compress = "xz")
 
 ## 7. Feature Enrichment Test Results
@@ -214,11 +211,13 @@ dir.create("misc-data/rlhub/feature_enrichment/", showWarnings = FALSE)
 # Feature enrichment of individual peaks
 load("rlbase-data/misc/annotatedPeaks.rda")
 feature_enrichment_per_sample <- resAnno
+feature_enrichment_per_sample$db <- gsub(feature_enrichment_per_sample$db, pattern = "G4Qpred__G4Pred", replacement = "G4Qpred")
 save(feature_enrichment_per_sample, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_per_samples.rda", compress = "xz")
 
 # Feature enrichment of RL-Regions
 load("rlbase-data/misc/annotatedPeaks.rlregions.rda")
 feature_enrichment_rlregions <- res
+feature_enrichment_rlregions$db <- gsub(feature_enrichment_rlregions$db, pattern = "G4Qpred__G4Pred", replacement = "G4Qpred")
 save(feature_enrichment_rlregions, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_rlregions.rda", compress = "xz")
 
 ## 8. Gene Expression

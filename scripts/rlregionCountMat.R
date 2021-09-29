@@ -42,7 +42,7 @@ cts_regions <- union_regions %>%
 # Get seq info
 samps <- read_tsv("../RLBase-data/rlbase-data/rlbase_samples.tsv", show_col_types = FALSE) %>%
   filter(genome == "hg38", group == "rl") %>%
-  select(experiment, condType, strand_specific, paired_end, mode, verdict, discarded, numPeaks) %>%
+  select(experiment, label, strand_specific, paired_end, mode, prediction, discarded, numPeaks) %>%
   unique() %>%
   mutate(bam = paste0("../RLBase-data/rlbase-data/rlpipes-out/bam/", experiment, "/", experiment, "_hg38.bam"),
          bam_avail = file.exists(bam)) %>%

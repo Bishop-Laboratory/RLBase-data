@@ -42,12 +42,12 @@ load(RLFSRDAFILE)
 manifest <- read_tsv(configtsv, show_col_types = FALSE) 
 
 # Clean cols
-if ("condType.x" %in% colnames(manifest)) {
-  to_rep <- which(manifest$condType.x != manifest$condType.y)
-  manifest$condType <- manifest$condType.x
-  manifest$condType[to_rep] <- "NULL"
+if ("label.x" %in% colnames(manifest)) {
+  to_rep <- which(manifest$label.x != manifest$label.y)
+  manifest$label <- manifest$label.x
+  manifest$label[to_rep] <- "NEG"
   manifest$condition[to_rep] <- "ActD"
-  manifest <- unique(dplyr::select(manifest, -condType.x, -condType.y))
+  manifest <- unique(dplyr::select(manifest, -label.x, -label.y))
 }
 
 # Check for previous
@@ -59,8 +59,8 @@ if (file.exists(file.path(RLFSDIR, "manifest.csv"))) {
 
 # Wrangle for display
 toDT <- manifest %>% 
-  select(experiment, condType) %>%
-  filter(experiment %in% names(rlfsRes),
+  dplyr::select(experiment, label) %>%
+  dplyr::filter(experiment %in% names(rlfsRes),
          ! duplicated(experiment)) %>%
   unique() %>%
   mutate(
@@ -72,8 +72,8 @@ toDT <- manifest %>%
                                  "<p style='color:orange'>No</p>",
                                  "<p style='color:blue'>Yes</p>")
   ) %>%
-  arrange(desc(previously_evaluated), desc(condType), experiment) %>%
-  dplyr::rename(label = condType)
+  arrange(desc(previously_evaluated), desc(label), experiment) %>%
+  dplyr::rename(label = label)
   
 
 # UI panels
@@ -129,12 +129,10 @@ ui <- fluidPage(
       br(),
       span(strong("POS:"), " A positive sample for R-loop mapping (e.g., typical S9.6 DRIP-Seq)."),
       br(),
-      span(strong("NEG:"), " Same as POS but with R-loops degraded (e.g., S9.6 DRIP-Seq + RNaseH1 treatment)."),
-      br(),
-      span(strong("NULL:"), " A background sample for modeling the null distribution of read alignments (e.g., Input controls)"),
+      span(strong("NEG:"), " A sample which does not map R-loops faithfully (e.g., S9.6 DRIP-Seq + RNaseH1 treatment or Input control)."),
       br(),
       br(),
-      span("See idealistic examples of POS, NEG, and NULL ", strong(a(href="https://rlbase-data.s3.amazonaws.com/misc/examples_for_select_samples.png", target="_blank", "here."))),
+      span("See examples of POS and NEG ", strong(a(href="https://rlbase-data.s3.amazonaws.com/misc/examples_for_select_samples.png", target="_blank", "here."))),
       hr(),
       span(paste0("*NOTE: Some samples will be particularly difficult to judge because ",
                   "they share many characteristics with the ideal examples but do not ",
@@ -250,26 +248,23 @@ server <- function(input, output, session) {
     
     # Get the manifest
     manifest <- read_tsv(MANIFEST_FINAL, show_col_types = FALSE)
-    if ("condType.x" %in% colnames(manifest)) {
-      to_rep <- which(manifest$condType.x != manifest$condType.y)
-      manifest$condType <- manifest$condType.x
-      manifest$condType[to_rep] <- "NULL"
+    if ("label.x" %in% colnames(manifest)) {
+      to_rep <- which(manifest$label.x != manifest$label.y)
+      manifest$label <- manifest$label.x
+      manifest$label[to_rep] <- "NEG"
       manifest$condition[to_rep] <- "ActD"
-      manifest <- unique(dplyr::select(manifest, -condType.x, -condType.y))
+      manifest <- unique(dplyr::select(manifest, -label.x, -label.y))
     }
     manifestModel <- manifest %>% 
-      filter(experiment %in% names(rlfsRes),
+      dplyr::filter(experiment %in% names(rlfsRes),
              ! duplicated(experiment),
              ! experiment %in% discard) %>%
-      arrange(condType, experiment) %>%
+      arrange(label, experiment) %>%
       mutate(
-        group = case_when(
-          condType == "POS" ~ "CASE",
-          TRUE ~ "CTRL"
-        ),
+        group = label,
         filename = paste0(experiment, "_", genome, ".rlfs.rda")
       ) %>%
-      select(id=experiment, group, filename) %>% unique()
+      dplyr::select(id=experiment, group, filename) %>% unique()
     
     write_csv(manifestModel, file = file.path(RLFSDIR, "manifest.csv"))
     

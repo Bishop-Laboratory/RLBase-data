@@ -43,6 +43,9 @@ conda activate rlbaseData
 pip install -e ../RLPipes/
 R -e "BiocManager::install(c('EnsDb.Hsapiens.v86', 'EnsDb.Mmusculus.v79'))"
 R -e "install.packages(c('ggprism', 'tableone'), repos = 'http://cran.us.r-project.org')"
+# If prior to bioc release:
+# R -e "BiocManager::install(verion='devel')"
+R -e "remotes::install_local('../RLHub/', dependencies=TRUE, force=TRUE)"
 R -e "remotes::install_local('../RLSeq/', dependencies=TRUE, force=TRUE)"
 ```
 
@@ -375,14 +378,18 @@ Rscript scripts/rlregionCountMat.R $CORES 1
 6. Rebuild all RLRanges and HTML notebooks
 
 ```shell
-CORES=44
+CORES=32
 Rscript scripts/runRLSeq.R $CORES
+```
+
+7. Upload results to AWS
+```shell
 aws s3 sync misc-data/reports s3://rlbase-data/reports
 aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
 ```
 
 
-7. Build/Update the RLHub 
+8. Build/Update the RLHub 
 
 ```shell
 Rscript scripts/prepRLHub.R

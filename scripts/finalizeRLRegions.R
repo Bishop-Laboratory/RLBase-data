@@ -61,7 +61,13 @@ makeRLoops <- function(ORIG_RL, MAX_RL_SIZE, RLOOPS) {
   
     
   # Check RLFS, chrom_sizes, and mask
-  RLFS <- RLSeq:::getRLFSAnno("hg38")
+  RLFS <- rtracklayer::import.bed(
+    file.path(
+      RLSeq:::RLBASE_URL,
+      "rlfs-beds",
+      paste0("hg38", ".rlfs.bed")
+    )
+  )
   
   # Prevent stranded assignment
   GenomicRanges::strand(RLFS) <- "*"
@@ -111,6 +117,7 @@ if (! interactive()) {
   sigtsv <- "rlregions/rlregions_dRNH_signal.tsv"
   manifest <- "rlbase_samples.tsv"
   blacklist <- "https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
+  setwd("rlbase-data/")
 }
 
 message(hg38rl)
@@ -203,11 +210,11 @@ rlregionsOl <- dplyr::select(isctSRa, rlregion=rlregion.x, sample=.source,
   relocate(location, .after = rlregion)
 message("- Adding in metadata")
 manifestToUse <- manifest %>%
-  dplyr::filter(condType == "POS") %>%
+  dplyr::filter(label == "POS") %>%
   dplyr::select(
     sample=experiment, 
     mode, tissue, ip_type, 
-    study, condType, verdict, numPeaks
+    study, label, prediction, numPeaks
   ) 
 rlregions <- rlregionsOl %>%
   inner_join(
@@ -226,12 +233,12 @@ rlregions <- rlregionsOl %>%
     nTissues = length(unique(tissue)),
     ip_types = paste0(unique(ip_type), collapse = ","),
     nIPTypes = length(unique(ip_type)),
-    pct_case = 100*(sum(verdict == "Case") / length(samples)),
+    pct_case = 100*(sum(prediction == "POS") / length(samples)),
     avgNumPeaks = mean(numPeaks),
     medNumPeaks = median(numPeaks)
   ) %>%
-  dplyr::select(-sample, -signalVal, -pVal, -qVal, -tissue, -verdict, 
-         -study, -mode, -ip_type, -condType) %>%
+  dplyr::select(-sample, -signalVal, -pVal, -qVal, -tissue, -prediction, 
+         -study, -mode, -ip_type, -label) %>%
   distinct(rlregion, .keep_all = TRUE)
 rlregions <- rlregions %>% 
   arrange(desc(nStudies), desc(avgQVal)) 
@@ -320,9 +327,11 @@ blklst <- read_tsv(blacklist, col_names = c("chrom", "start", "end"), show_col_t
   mutate(strand = "*",
          type = "blacklist")
 # Get repeats
-rmsk <- read_csv("../misc-data/annotations/hg38/Repeat_Masker.csv.gz", show_col_types = FALSE, progress = FALSE)
+annos <- RLHub::annots_full_hg38()
+rmsk <- annos[grepl(names(annos), pattern = "Repeat_Masker.+|Centromeres+")] %>%
+  bind_rows(.id = "type")
 rmsk <- rmsk %>%
-  mutate(type = gsub(name, pattern = ".+__(.+)__.+", replacement = "\\1")) %>%
+  mutate(type = gsub(type, pattern = ".+__(.+)", replacement = "\\1")) %>%
   filter(type %in% c("Centromeres", "Retroposon", "rRNA", "Satellite", 
                       "scRNA", "snRNA", "tRNA", "RC", "srpRNA"))
 # Bind together

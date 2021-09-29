@@ -33,8 +33,8 @@ catalogGrouped <- catalog %>%
 
 # Get the manifest for RMap
 toBuild <- catalogGrouped %>%
-  left_join(select(modes, -PMID), by = "mode") %>%
-  filter(group != "other",
+  left_join(dplyr::select(modes, -PMID), by = "mode") %>%
+  dplyr::filter(group != "other",
          ! bisulfite_seq | mode == "RNA-Seq") %>%
   unique() 
 

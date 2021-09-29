@@ -60,8 +60,8 @@ samplesForConsensus <- manifest %>%
   filter(
     genome == "hg38",
     group == "rl",
-    condType == "POS",
-    verdict == "Case",
+    label == "POS",
+    prediction == "POS",
     numPeaks > NUM_SELECT
   )
 write_tsv(samplesForConsensus, file = "misc-data/samplesForConsensus.tsv")
@@ -82,7 +82,7 @@ consSamp <- samplesForConsensus %>%
 hg38Mani <- manifest %>%
   dplyr::filter(
     genome == "hg38",
-    condType == "POS",
+    label == "POS",
     numPeaks > 0
   ) %>%
   dplyr::mutate(peak = paste0(PEAKSORIG, experiment, "_hg38.broadPeak")) %>%
