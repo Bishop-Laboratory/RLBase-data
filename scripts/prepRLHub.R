@@ -252,4 +252,84 @@ rlbps <- inner_join(
 # Save
 save(rlbps, file = "misc-data/rlhub/rlbps/rlbps.rda", compress = "xz")
 
+## 11. RL and Expression correlation
+#' Analyze the expression-r-loop correlation
+load("misc-data/rlhub/rlsamples/rlsamples.rda")
+load("misc-data/rlhub/rlregions/rlregions_table.rda")
+load("misc-data/rlhub/expression/geneexp.rda")
+tpm <- gene_exp@assays@data$tpm
+rlregions <- rlregions_table
+## Convert tpm gene to rl ##
+rlregion_to_gene <- rlregions %>%
+  dplyr::select(rlregion, geneIDs) %>%
+  dplyr::filter(! is.na(geneIDs)) %>%
+  mutate(gene = map(geneIDs, function(x) {unlist(strsplit(x, split = ","))})) %>%
+  dplyr::select(-geneIDs) %>%
+  unnest(gene)
+# TODO: Should this be a sum?
+tpmexp <- tpm %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "gene") %>%
+  pivot_longer(cols = -"gene") %>%
+  left_join(rlregion_to_gene, by = "gene") %>%
+  group_by(name, rlregion) %>%
+  summarise(value = mean(value)) %>%
+  dplyr::rename(exp = value)
+condmap <- rlsamples %>%
+  dplyr::filter(prediction == "POS") %>%
+  dplyr::select(rlsample, expsamples, exp_matchCond) %>%
+  mutate(expsamples = map(expsamples, function(x) {unlist(strsplit(x, split = ","))})) %>%
+  unnest(expsamples)
+exp2cond <- unique(dplyr::select(condmap, -rlsample))
+rl2cond <- unique(dplyr::select(condmap, -expsamples))
+tpmexp2 <- inner_join(exp2cond, tpmexp,  by = c("expsamples" = "name")) %>%
+  group_by(rlregion, exp_matchCond) %>%
+  summarise(exp = mean(exp))
+# Combine with R-loop signal
+load("misc-data/rlhub/rlregions/rlregions_counts.rda")
+tpmrl <- rlcounts@assays@data$tpm %>%
+  as.data.frame() %>% 
+  rownames_to_column(var = "rlregion") %>%
+  pivot_longer(cols = -"rlregion") %>%
+  dplyr::rename(rl = value)
+# Match up to shared conds
+tpmrl2 <- inner_join(rl2cond, tpmrl,  by = c("rlsample" = "name")) %>%
+  group_by(rlregion, exp_matchCond) %>%
+  summarise(rl = mean(rl))
+# Combined expression and r-loop
+tpm_join <- inner_join(ungroup(tpmrl2), ungroup(tpmexp2), by = c("rlregion", "exp_matchCond"))
+# Get corr
+corr_estimate <- tpm_join %>%
+  group_by(rlregion) %>%
+  group_split() %>%
+  pbapply::pblapply(function(x) {
+    ct <- suppressWarnings(cor.test(x$rl, x$exp, method="spearman"))
+    tibble(
+      rlregion = x$rlregion[1],
+      pval = ct$`p.value`,
+      estimate=ct$estimate
+    )
+  }) %>% bind_rows()
+corr_estimate <- corr_estimate %>%
+  mutate(corrPAdj = p.adjust(pval)) %>%
+  dplyr::rename(corrPVal = pval,
+                corrR = estimate)
+rlregions <- rlregions %>% dplyr::select(
+  -corrPAdj,
+  -corrPVal,
+  -corrR
+)
+rlregion_table <- left_join(rlregions, corr_estimate, by = "rlregion")
+save(rlregion_table, file = "misc-data/rlhub/rlregions/rlregions_table.rda", compress = "xz")
+tpm_rl_exp <- tpm_join
+save(tpm_rl_exp, file = "misc-data/rlhub/rlregions/tpm_rl_exp.rda", compress = "xz")
 
+# rlr <- rlregion_table %>%
+#   select(corrR, allGenes) %>%
+#   mutate(allGenes = map(allGenes, function(x) {unlist(strsplit(x, split = ","))})) %>%
+#   unnest(allGenes) %>%
+#   group_by(allGenes) %>%
+#   summarize(
+#     corrR = corrR[which.max(abs(corrR))]
+#   ) %>%
+#   write_csv("corGSEA.csv")
