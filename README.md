@@ -396,6 +396,11 @@ Rscript scripts/prepRLHub.R
 find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
 ```
 
+9. Update the RLHub Genome Browser TrackHub
 
+```shell
+Rscript scripts/buildGenomeBrowserHub.R
+aws s3 sync misc-data/RLBase_TrackHub/ s3://rlbase-data/misc/RLBase_TrackHub/
+```
 
 
