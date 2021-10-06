@@ -89,6 +89,7 @@ outtbl <- paste0("misc-data/rlhub/rlregions/rlregions_annotations.rda")
 fl <- paste0("rlbase-data/misc/rlregions_", opt, "_annotations.csv")
 rlregions_annotated <- read_csv(fl, show_col_types = FALSE, progress = FALSE)
 rlregions_annotated$annotation <- gsub(rlregions_annotated$annotation, pattern = "G4Qpred__G4Pred", replacement = "G4Qpred")
+rlregions_annotated$rlregion <- gsub(rlregions_annotated$rlregion, pattern = "All_", replacement = "")
 save(rlregions_annotated, compress = "xz", file = outtbl)
 
 ## 3. RL Samples
@@ -134,7 +135,6 @@ rlsamples <- expToCond %>%
   ) 
 
 # Clean up predictions (some ended up as NAs...)
-
 rlres <- parallel::mclapply(seq(rlsamples$rlsample), function(i) {
   samp <- rlsamples$rlsample[i]
   gen <- rlsamples$genome[i]
@@ -331,7 +331,8 @@ rlregion_table <- rlregion_table %>%
                            scale(log2(medSignalVal), center = FALSE))^(1/4))) %>%
   mutate(confidence_score = as.numeric(confidence_score)) %>%
   arrange(desc(confidence_score)) %>%
-  select(-mplyr, conservation_score=confidence_level)
+  select(-mplyr, conservation_score=confidence_level) %>%
+  dplyr::mutate(rlregion = gsub(rlregion, pattern = "All_", replacement = ""))
 save(rlregion_table, file = "misc-data/rlhub/rlregions/rlregions_table.rda", compress = "xz")
 tpm_rl_exp <- tpm_join
 save(tpm_rl_exp, file = "misc-data/rlhub/rlregions/tpm_rl_exp.rda", compress = "xz")
