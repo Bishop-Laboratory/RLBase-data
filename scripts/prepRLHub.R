@@ -320,6 +320,18 @@ rlregions <- rlregions %>% dplyr::select(
   -corrR
 )
 rlregion_table <- left_join(rlregions, corr_estimate, by = "rlregion")
+# TODO: Use this in the analysis figures
+# Formula for getting the RL-Region "score"
+# Geometric mean of confidence, nStudies, medQVal, and medSignalVal (normalized) * a multiplier than rewards being found by S96 and dRNH
+rlregion_table$mplyr <- ifelse(rlregion_table$source == "dRNH S96", 1.25, 1)
+rlregion_table <- rlregion_table %>%
+  mutate(confidence_score = mplyr*((scale(log2(confidence_level), center = FALSE)*
+                           scale(nStudies, center = FALSE)*
+                           scale(log2(medQVal), center = FALSE)*
+                           scale(log2(medSignalVal), center = FALSE))^(1/4))) %>%
+  mutate(confidence_score = as.numeric(confidence_score)) %>%
+  arrange(desc(confidence_score)) %>%
+  select(-mplyr, conservation_score=confidence_level)
 save(rlregion_table, file = "misc-data/rlhub/rlregions/rlregions_table.rda", compress = "xz")
 tpm_rl_exp <- tpm_join
 save(tpm_rl_exp, file = "misc-data/rlhub/rlregions/tpm_rl_exp.rda", compress = "xz")

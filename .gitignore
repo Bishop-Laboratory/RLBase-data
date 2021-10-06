@@ -16,6 +16,8 @@ rlbase-data/rlpipes-out/datadump/
 **/rlbase-data/**/*.tsv
 !rlbase-data/rlbase_samples.tsv
 **/rlbase-data/**/*.csv
+*.bb
+*.bigNarrowPeak
 *.bw
 *.bedGraph
 venv/
