@@ -20,7 +20,7 @@ if (! interactive()) {
   threads <- 44
   output <- "rlbase-data/rlregions/rlregions_All.narrowPeak"
   patpeak <- "rlbase-data/rlregions/rlregions_(.+)\\.narrowPeak"
-  patmani <- "rlbase-data/rlregions/hg38_manifest_(.+)\\.csv"
+  patmani <- "rlbase-data/rlregions/rlregion_manifest_(.+)\\.csv"
 }
 
 ## Combined S9.6 and dRNH consensus sites ##
