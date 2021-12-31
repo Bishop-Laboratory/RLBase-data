@@ -221,6 +221,7 @@ lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $R
 
 ```shell
 CORES=44
+RLPIPESOUT="rlbase-data/rlpipes-out/"
 Rscript scripts/rlfsAnalyze.R $RLPIPESOUT/peaks $RLPIPESOUT/rlfs_rda $CORES
 ```
 
