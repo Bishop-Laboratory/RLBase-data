@@ -205,12 +205,15 @@ ui <- fluidPage(
 # Server function
 server <- function(input, output, session) {
   
+  dtdat <- reactiveVal(value = toDT)
+  
+  
   observeEvent(input$save, {
     print("press")
   })
   
   output$rlbaseSamples <- renderDT({
-    toDT %>% column_to_rownames("experiment")
+    dtdat() %>% column_to_rownames("experiment")
   }, selection = list(mode = 'single', selected = 1), escape=FALSE, server = FALSE, 
   options = list(dom = 't', paging = FALSE, ordering = FALSE, scrollY="600px"),
     callback = JS("table.rows().every(function(i, tab, row) {
@@ -225,7 +228,9 @@ server <- function(input, output, session) {
   output$sel <- renderPrint({
      discard <- sapply(toDT$experiment, function(i) input[[i]])
      discard <- names(which(sapply(discard, function(x) ! is.null(x))))
-     save(discard, file = "misc-data/model/todiscard.rda")
+     message(discard)
+     message(length(discard))
+     save(discard, file = TODISCARD)
      str(discard)
   })
   
@@ -294,6 +299,11 @@ server <- function(input, output, session) {
     prevdone <- paste0("Last run at: ", Sys.time())
     save(prevdone, file = PREVDONE)
     donetime(prevdone)
+    newdtdat <- dtdat() %>%
+      mutate(
+        previously_evaluated = "<p style='color:blue'>Yes</p>"
+      )
+    dtdat(newdtdat)
     
     shinyWidgets::sendSweetAlert(
       session = session,

@@ -5,9 +5,15 @@
 args <- commandArgs(trailingOnly = TRUE)
 
 # Get output dir
-indir <- args[1]
-outdir <- args[2]
-cores <- args[3]
+if (interactive()) {
+  indir <- "rlbase-data/rlpipes-out/peaks/"
+  outdir <- "rlbase-data/rlpipes-out/rlfs_rda/"
+  cores <- 44
+} else {
+  indir <- args[1]
+  outdir <- args[2]
+  cores <- args[3]
+}
 miscpath <- file.path(dirname(dirname(outdir)), "misc")
 
 message(indir)
@@ -26,7 +32,8 @@ peaks <- list.files(indir, full.names = TRUE, pattern = paste0(available, collap
 peaks <- peaks[grepl(peaks, pattern = ".+\\.broadPeak$") & file.size(peaks) > 0]
 
 # Calculate enrichment
-rlfsRes <- parallel::mclapply(seq(peaks), function(i) {
+rlfsRes <- parallel::mclapply(
+  seq(peaks), function(i) {
   
   message(i, " / ", length(peaks))
   
@@ -36,7 +43,9 @@ rlfsRes <- parallel::mclapply(seq(peaks), function(i) {
   out <- file.path(outdir, paste0(id, "_", genome, ".rlfs.rda"))
   
   if (! file.exists(out)) {
-    res <- RLSeq::analyzeRLFS(peak, genome = genome)
+    rlr <- RLSeq::RLRanges(peaks = peak, genome = genome)
+    res <- RLSeq::analyzeRLFS(rlr)
+    res <- RLSeq::rlresult(res, "rlfsRes")
     # Remove large randomization function...
     res$perTestResults$`regioneR::numOverlaps`$randomize.function <- NULL
     res$id <- id
@@ -49,7 +58,7 @@ rlfsRes <- parallel::mclapply(seq(peaks), function(i) {
     load(out)
     return(res)
   }
-}, mc.cores = cores)
+} , mc.cores = cores)
 
 # Get names
 names(rlfsRes) <- sapply(rlfsRes, function(x) {
