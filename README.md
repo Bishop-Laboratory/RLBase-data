@@ -198,48 +198,7 @@ CORES=44
 RLPipes run $RLPIPESOUT --bwamem2 --noreport --tsv -t $CORES
 ```
 
-8. Archive quant folders
-
-```shell
-cp -r $RLPIPESOUT/quant $RLPIPESOUT/quant_save
-cd $RLPIPESOUT/quant_save
-find . -type d -maxdepth 1 -mindepth 1 -print0 | parallel -0 tar cfJ {}.tar.xz {}
-find . -type d -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
-cd $RLBASEDIR
-```
-
-9. Archive peaks
-
-```shell
-mkdir $RLPIPESOUT/peaks_save
-find $RLPIPESOUT/peaks -type f -maxdepth 1 -mindepth 1 -name "*.broadPeak" -exec cp {} $RLPIPESOUT/peaks_save \;
-```
-
-10. Make tarballs
-
-```shell
-cd $RLPIPESOUT
-
-## TO RUN 
-
-tar cfJ peaks.tar.xz peaks/ &
-tar cfJ coverage.tar.xz coverage/ &
-
-##############
-
-tar cfJ quant.tar.xz quant/ &
-tar cfJ logs.tar.xz logs/ &
-tar cfJ fastq_stats.tar.xz fastq_stats/ &
-tar cfJ bam_stats.tar.xz bam_stats/ &
-mkdir datadump
-find . -type f -maxdepth 1 -name "*.tar.xz" -exec mv {} datadump/ \;
-cp config.tsv datadump/
-cp config.json datadump/
-cp ../rlbase_catalog.xlsx datadump/
-cp ../rlbase_manifest.csv datadump/
-```
-
-11. Upload datasets to aws (requires admin privledges)
+8. Upload datasets to aws (requires admin privledges)
 
 ```shell
 cd $RLBASEDIR
@@ -248,36 +207,25 @@ aws s3 sync --size-only $RLPIPESOUT/peaks_save/ s3://rlbase-data/peaks/
 aws s3 sync --size-only $RLPIPESOUT/quant_save/ s3://rlbase-data/quant/
 aws s3 sync --size-only $RLPIPESOUT/bam_stats/ s3://rlbase-data/bam_stats/
 aws s3 sync --size-only $RLPIPESOUT/fastq_stats/ s3://rlbase-data/fastq_stats/
-
-
-
-# TO RUN
-
-
-aws s3 sync --size-only $RLPIPESOUT/datadump/ s3://rlbase-data/datadump/
 ```
 
-12. Store .bam files (we used BOX for this part)
+9. Store .bam files (we used BOX for this part)
 
 ```shell
 FTPSITE="ftp.box.com"
 REMOTEDIR="RLBase-Archive/"
-
-
-# TO RUN 
-
-
 lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
 ```
 
-13. Calculate RLFS enrichment for each sample
+10. Calculate RLFS enrichment for each sample
 
 ```shell
 CORES=44
+RLPIPESOUT="rlbase-data/rlpipes-out/"
 Rscript scripts/rlfsAnalyze.R $RLPIPESOUT/peaks $RLPIPESOUT/rlfs_rda $CORES
 ```
 
-14. Upload to AWS
+11. Upload to AWS
 
 ```shell
 aws s3 sync --size-only $RLPIPESOUT/rlfs_rda/ s3://rlbase-data/rlfs_rda/
