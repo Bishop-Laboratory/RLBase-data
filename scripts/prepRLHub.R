@@ -57,6 +57,8 @@ a_ <- pblapply(
     
   }
 )
+
+
 ## 2. RL Regions
 message("- 2. RL-Regions")
 dir.create("misc-data/rlhub/rlregions/", showWarnings = FALSE)
@@ -134,34 +136,6 @@ rlsamples <- expToCond %>%
     rlfs_rda_s3 = paste0("rlfs_rda/", rlsample, "_", genome, ".rlfs.rda")
   ) 
 
-# Clean up predictions (some ended up as NAs...)
-rlres <- parallel::mclapply(seq(rlsamples$rlsample), function(i) {
-  samp <- rlsamples$rlsample[i]
-  gen <- rlsamples$genome[i]
-  if (file.exists(file.path(
-    "misc-data", "rlranges", paste0(samp, "_", gen, ".rds")
-  ))) {
-    rlr <- readRDS(file.path(
-      "misc-data", "rlranges", paste0(samp, "_", gen, ".rds")
-    ))
-    rlr
-  } else {
-    NA
-  }
-}, mc.cores = 44)
-names(rlres) <- rlsamples$rlsample
-
-# Get prediction
-rlsamples$prediction <- pbsapply(
-  rlres, function(rlr) {
-    if (! is.na(rlr)) {
-      rlr@metadata$results@predictRes$prediction
-    } else {
-      NA
-    }
-  }
-)
-
 # Save
 save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz")
 
@@ -169,22 +143,32 @@ save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz
 message("- 4. RLFS-res")
 dir.create("misc-data/rlhub/rlfsres", showWarnings = FALSE)
 
-# Also fix the rlfs_rda
-rlfsres <- pbsapply(seq(rlres), function(i) {
-  rlr <- rlres[[i]]
-  if (! is.na(rlr)) {
-    lst <- list(
-      rlfsPred=rlr@metadata$results@predictRes,
-      rlfsData=rlr@metadata$results@rlfsRes
-    )
-    lst$rlfsData$perTestResults$`regioneR::numOverlaps`$evaluate.function <- NULL
-    lst$rlfsData$perTestResults$`regioneR::numOverlaps`$randomize.function <- NULL
-    lst
-  } else {
-    NA
-  }
+
+load("rlbase-data/misc/rlfsRes__full.rda")
+
+# Get the predictions
+rlfsres <- pbapply::pblapply(rlfsRes_full, function(x) {
+  xx <- predictCondition(
+    rlfsRes = x,
+    prepFeatures=prepFeatures,
+    fftModel=fftModel
+  )
+  lst <- list(
+    rlfsPred=xx,
+    rlfsData=x
+  )
+  lst$rlfsData$perTestResults$`regioneR::numOverlaps`$evaluate.function <- NULL
+  lst$rlfsData$perTestResults$`regioneR::numOverlaps`$randomize.function <- NULL
+  lst
 })
-names(rlfsres) <- names(rlres)
+toadd <- rlsamples$rlsample[! rlsamples$rlsample %in% names(rlfsres)]
+rlfsres2 <- setNames(lapply(toadd, function(x) {
+  NA
+}), nm=toadd)
+rlfsres <- c(rlfsres, rlfsres2)
+rlfsres <- rlfsres[names(rlfsres) %in% rlsamples$rlsample & ! duplicated(names(rlfsres))]
+rlfsres <- rlfsres[rlsamples$rlsample]
+all(names(rlfsres) == rlsamples$rlsample)
 
 # Save
 save(rlfsres, file = "misc-data/rlhub/rlfsres/rlfsres.rda", compress = "xz")
@@ -200,8 +184,8 @@ file.copy("misc-data/model/prepFeatures.rda", overwrite = TRUE,
 ## 6. GSG Correlation
 message("- 6. GS Corr")
 dir.create("misc-data/rlhub/gsg_correlation/", showWarnings = FALSE)
-
 load("misc-data/gsSignalRLBase.rda")
+gsSignalRLBase <- gsSignalRLBase %>% dplyr::select(location, contains(rlsamples$rlsample[rlsamples$genome == "hg38"]))
 save(gsSignalRLBase, file = "misc-data/rlhub/gsg_correlation/gsSignalRLBase.rda", compress = "xz")
 
 ## 7. Feature Enrichment Test Results
@@ -212,6 +196,7 @@ dir.create("misc-data/rlhub/feature_enrichment/", showWarnings = FALSE)
 load("rlbase-data/misc/annotatedPeaks.rda")
 feature_enrichment_per_sample <- resAnno
 feature_enrichment_per_sample$db <- gsub(feature_enrichment_per_sample$db, pattern = "G4Qpred__G4Pred", replacement = "G4Qpred")
+feature_enrichment_per_sample <- feature_enrichment_per_sample %>% dplyr::filter(experiment %in% rlsamples$rlsample)
 save(feature_enrichment_per_sample, file = "misc-data/rlhub/feature_enrichment/feature_enrichment_per_samples.rda", compress = "xz")
 
 # Feature enrichment of RL-Regions
@@ -243,7 +228,8 @@ rlbpukn <- rlbp[! rlbp$geneName %in% symbs$SYMBOL,]
 rlbpsym <- rlbp[rlbp$geneName %in% symbs$SYMBOL,]
 rlbps <- inner_join(
   rlbpukn, symbs, by = c("geneName" = "ALIAS")
-) %>% select(-geneName, -ENTREZID, geneName = SYMBOL) %>%
+) %>% 
+  dplyr::select(-geneName, -ENTREZID, geneName = SYMBOL) %>%
   bind_rows(rlbpsym) %>%
   distinct(geneName, .keep_all = TRUE) %>%
   relocate(geneName) %>%
@@ -287,7 +273,7 @@ tpmexp2 <- inner_join(exp2cond, tpmexp,  by = c("expsamples" = "name")) %>%
   summarise(exp = mean(exp))
 # Combine with R-loop signal
 load("misc-data/rlhub/rlregions/rlregions_counts.rda")
-tpmrl <- rlcounts@assays@data$tpm %>%
+tpmrl <- rlregions_counts@assays@data$tpm %>%
   as.data.frame() %>% 
   rownames_to_column(var = "rlregion") %>%
   pivot_longer(cols = -"rlregion") %>%
@@ -331,7 +317,7 @@ rlregion_table <- rlregion_table %>%
                            scale(log2(medSignalVal), center = FALSE))^(1/4))) %>%
   mutate(confidence_score = as.numeric(confidence_score)) %>%
   arrange(desc(confidence_score)) %>%
-  select(-mplyr, conservation_score=confidence_level) %>%
+  dplyr::select(-mplyr, conservation_score=confidence_level) %>%
   dplyr::mutate(rlregion = gsub(rlregion, pattern = "All_", replacement = ""))
 save(rlregion_table, file = "misc-data/rlhub/rlregions/rlregions_table.rda", compress = "xz")
 tpm_rl_exp <- tpm_join

@@ -58,7 +58,7 @@ rlfsRes <- parallel::mclapply(
     load(out)
     return(res)
   }
-} , mc.cores = cores)
+}, mc.cores = cores)
 
 # Get names
 names(rlfsRes) <- sapply(rlfsRes, function(x) {

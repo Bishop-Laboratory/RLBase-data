@@ -30,7 +30,7 @@ manifest <- read_tsv(MANIFEST, show_col_types = FALSE) %>%
 
 # Get the number of peaks meeting a cutoff of p<1E5
 if ("numPeaks" %in% colnames(manifest)) {
-  manifest <- select(manifest, -numPeaks)
+  manifest <- dplyr::select(manifest, -numPeaks)
 }
 peaks <- list.files(PEAKSORIG, pattern = "\\.broadPeak", full.names = TRUE)
 peaks <- tibble(
@@ -39,15 +39,16 @@ peaks <- tibble(
   peakfile = peaks
 )
 # Get the number of peaks below the pval cutoff
+message("Calculating number of peaks...")
 lens <- pbapply::pbsapply(peaks$peakfile, function(x) {
   system(paste0("awk '$9>", PCUTOFF, "' ", x, " | wc -l "), intern = TRUE)
 }) %>% as.numeric()
 nPeaks <- peaks %>%
-  select(experiment) %>%
+  dplyr::select(experiment) %>%
   mutate(numPeaks = {{ lens }})
 manifest <- left_join(manifest, nPeaks, by = "experiment") 
 if ("run" %in% colnames(manifest)) {
-  manifest <- unique(select(manifest, -run))
+  manifest <- unique(dplyr::select(manifest, -run))
 }
 # Force unique experiment
 manifest <- manifest %>%
@@ -57,7 +58,7 @@ write_tsv(manifest, file = MANIFEST)
 
 # Get the final peakset for R-loop consensus
 samplesForConsensus <- manifest %>%
-  filter(
+  dplyr::filter(
     genome == "hg38",
     group == "rl",
     label == "POS",
@@ -96,38 +97,38 @@ hg38Mani <- manifest %>%
 
 # Write manifests for snakemake
 consSamp %>% 
-  select(peak) %>%
+  dplyr::select(peak) %>%
   mutate(peak = normalizePath(peak)) %>%
   unique() %>%
   write_csv("rlbase-data/rlregions/rlregion_manifest_All.csv", col_names = FALSE)
 hg38Mani %>% 
-  select(peak) %>%
+  dplyr::select(peak) %>%
   mutate(peak = normalizePath(peak)) %>%
   unique() %>%
   write_csv("rlbase-data/rlregions/hg38_manifest_All.csv", col_names = FALSE)
 
 # Write manifests for S96 and RNH
 consSamp %>%
-  filter(ip_type == "S9.6") %>%
-  select(peak) %>%
+  dplyr::filter(ip_type == "S9.6") %>%
+  dplyr::select(peak) %>%
   mutate(peak = normalizePath(peak)) %>%
   unique() %>%
   write_csv("rlbase-data/rlregions/rlregion_manifest_S96.csv", col_names = FALSE)
 consSamp %>%
-  filter(ip_type == "dRNH") %>%
-  select(peak) %>%
+  dplyr::filter(ip_type == "dRNH") %>%
+  dplyr::select(peak) %>%
   mutate(peak = normalizePath(peak)) %>%
   unique() %>%
   write_csv("rlbase-data/rlregions/rlregion_manifest_dRNH.csv", col_names = FALSE)
 hg38Mani %>% 
-  filter(ip_type == "S9.6") %>%
-  select(peak) %>%
+  dplyr::filter(ip_type == "S9.6") %>%
+  dplyr::select(peak) %>%
   mutate(peak = normalizePath(peak)) %>%
   unique() %>%
   write_csv("rlbase-data/rlregions/hg38_manifest_S96.csv", col_names = FALSE)
 hg38Mani %>% 
-  filter(ip_type == "dRNH") %>%
-  select(peak) %>%
+  dplyr::filter(ip_type == "dRNH") %>%
+  dplyr::select(peak) %>%
   mutate(peak = normalizePath(peak)) %>%
   unique() %>%
   write_csv("rlbase-data/rlregions/hg38_manifest_dRNH.csv", col_names = FALSE)

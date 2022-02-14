@@ -8,7 +8,7 @@ if (! interactive()) {
   args <- commandArgs(trailingOnly = TRUE)
   CORES <- args[1]
 } else {
-  CORES <- 44
+  CORES <- 10
 }
 
 
@@ -61,7 +61,7 @@ res2 <- parallel::mclapply(
     
     message(i)
     
-    if (! file.exists(paste0(
+    if (TRUE | ! file.exists(paste0(
       "misc-data/rlranges/", rlsamples$rlsample[i],
       "_", rlsamples$genome[i], ".rds"
     ))) {
@@ -75,8 +75,7 @@ res2 <- parallel::mclapply(
           genome = rlsamples$genome[i],
           mode = rlsamples$mode[i],
           label = rlsamples$label[i],
-          sampleName = rlsamples$rlsample[i],
-          quiet = TRUE
+          sampleName = rlsamples$rlsample[i]
         ), silent = TRUE
       )
       if ("try-error" %in% class(rlr)) {
@@ -97,6 +96,15 @@ res2 <- parallel::mclapply(
       } else {
         rlr <- rlr2
       }
+      # Add new prediction...
+      PREPMODEL <- "misc-data/model/prepFeatures.rda"
+      FFTMODEL <- "misc-data/model/fftModel.rda"
+      load(PREPMODEL)
+      load(FFTMODEL)
+      rlr <- RLSeq:::predictCondition(
+        rlr, prepFeatures=prepFeatures,
+        fftModel=fftModel
+      )
       
       # Save RDS
       saveRDS(
@@ -118,7 +126,7 @@ res2 <- parallel::mclapply(
     
     
     # Report
-    if (! file.exists(paste0(
+    if (FALSE | ! file.exists(paste0(
       "misc-data/reports/", rlr@metadata$sampleName,
       "_", GenomeInfoDb::genome(rlr)[1], ".html"
     )))  {

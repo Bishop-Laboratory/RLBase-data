@@ -42,8 +42,10 @@ resAnno <- parallel::mclapply(seq(peaktbl$experiment), function(i) {
   peak <- peaktbl$peakfile[i] %>%
     regioneR::toGRanges()
   if (! file.exists(paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))) {
-    anno <- RLSeq::featureEnrich(peaks = peak, genome = peaktbl$genome[i],
-                                 annotations =  annotationLst[[peaktbl$genome[i]]], cores = 1) %>%
+    rlr <- RLSeq::RLRanges(peaks = peak, genome = peaktbl$genome[i])
+    anno <- RLSeq::featureEnrich(rlr,
+                                 annotations =  annotationLst[[peaktbl$genome[i]]])
+    anno <- RLSeq::rlresult(anno, resultName = "featureEnrichment") %>%
       mutate(experiment = peaktbl$experiment[i])
     save(anno, file = paste0("../RLBase-data/tmp/annotatedPeaks/", peaktbl$experiment[i], ".rda"))
     anno
