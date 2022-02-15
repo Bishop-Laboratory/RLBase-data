@@ -8,52 +8,15 @@ if (! interactive()) {
   args <- commandArgs(trailingOnly = TRUE)
   CORES <- args[1]
 } else {
-  CORES <- 10
+  CORES <- 40
 }
 
 
 dir.create("misc-data/rlranges", showWarnings = FALSE)
 dir.create("misc-data/reports", showWarnings = FALSE)
 
-# Get the condition names for matching exp to rl
-expToCond <- read_csv("misc-data/rl_to_exp.csv", show_col_types = FALSE) %>%
-  right_join(read_tsv("rlbase-data/rlbase_samples.tsv", show_col_types = FALSE), 
-             by = c("rl" = "experiment")) %>%
-  mutate(toChoose = gsub(toChoose, pattern = "_", replacement =  "|"))
-matchConds <- pbsapply(seq(nrow(expToCond)), function(i) {
-  if (! is.na(expToCond$toChoose[i])) {
-    cols <- paste0(colnames(expToCond)[grep(colnames(expToCond[i,]),
-                                            pattern = expToCond$toChoose[i])])
-    dplyr::select(expToCond[i,], all_of(cols[order(cols)])) %>% 
-      pivot_longer(everything()) %>% 
-      summarise(paste0(value, collapse = "_")) %>% 
-      pull(1)
-  } else {
-    NA
-  }
-})
-expToCond$matchCond <- matchConds
-
 # Summarise to RL-sample level and build links
-rlsamples <- expToCond %>%
-  dplyr::select(-toChoose, rlsample = rl, expsamples=exp) %>%
-  group_by(rlsample) %>%
-  mutate(expsamples = paste0(expsamples, collapse=",")) %>%
-  ungroup() %>%
-  dplyr::filter(group == "rl") %>%
-  distinct() %>%
-  dplyr::rename(exp_matchCond = matchCond) %>%
-  relocate(expsamples, .after = numPeaks) %>%
-  mutate(
-    coverage_s3 = paste0("coverage/", rlsample, "_", genome, ".bw"),
-    peaks_s3 = paste0("peaks/", rlsample, "_", genome, ".broadPeak"),
-    fastq_stats_s3 = paste0("fastq_stats/", rlsample, "_", genome, "__fastq_stats.json"),
-    bam_stats_s3 = paste0("bam_stats/", rlsample, "_", genome, "__bam_stats.txt"),
-    report_html_s3 = paste0("reports/", rlsample, "_", genome, ".html"),
-    rlranges_rds_s3 = paste0("rlranges/", rlsample, "_", genome, ".rds"),
-    rlfs_rda_s3 = paste0("rlfs_rda/", rlsample, "_", genome, ".rlfs.rda")
-  ) 
-
+rlsamples <- RLHub::rlbase_samples()
 
 # Run RLSeq
 res2 <- parallel::mclapply(
@@ -61,7 +24,7 @@ res2 <- parallel::mclapply(
     
     message(i)
     
-    if (TRUE | ! file.exists(paste0(
+    if (! file.exists(paste0(
       "misc-data/rlranges/", rlsamples$rlsample[i],
       "_", rlsamples$genome[i], ".rds"
     ))) {
@@ -96,15 +59,6 @@ res2 <- parallel::mclapply(
       } else {
         rlr <- rlr2
       }
-      # Add new prediction...
-      PREPMODEL <- "misc-data/model/prepFeatures.rda"
-      FFTMODEL <- "misc-data/model/fftModel.rda"
-      load(PREPMODEL)
-      load(FFTMODEL)
-      rlr <- RLSeq:::predictCondition(
-        rlr, prepFeatures=prepFeatures,
-        fftModel=fftModel
-      )
       
       # Save RDS
       saveRDS(
@@ -126,7 +80,7 @@ res2 <- parallel::mclapply(
     
     
     # Report
-    if (FALSE | ! file.exists(paste0(
+    if (! file.exists(paste0(
       "misc-data/reports/", rlr@metadata$sampleName,
       "_", GenomeInfoDb::genome(rlr)[1], ".html"
     )))  {
