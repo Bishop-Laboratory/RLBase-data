@@ -14,7 +14,7 @@ baseURL <- RLSeq:::RLBASE_URL
 dir.create(GEN_BROWSE_HTML_DIR, showWarnings = FALSE)
 
 # Make HTML files
-load("misc-data/rlhub/rlsamples/rlsamples.rda")
+rlsamples <- RLHub::rlbase_samples()
 samples <- rlsamples %>%
   filter(genome == "hg38") %>%
   mutate(
@@ -38,7 +38,8 @@ samples <- rlsamples %>%
     html = file.path(baseURL, "misc", "RLBase_TrackHub", paste0(rlsample, ".bw.html")),
     autoScale = "on",
     smoothingWindow = "8",
-    maxHeightPixels = "100:40:8"
+    maxHeightPixels = "100:40:8",
+    windowingFunction = "mean"
   ) %T>% {
     group_by(., rlsample) %>%
       {setNames(group_split(.), group_keys(.)[[1]])} %>%  # Split tibble into list by group with names
@@ -68,18 +69,22 @@ group_by(samples, modeNow) %>%
   pbapply::pblapply(., function(x) {
     x$priority <- c(seq(x$rlsample))
     linesNow <- sapply(seq(x$rlsample), function(i) {
-      paste0("\ntrack ", x$track[i],
-             "\ntype ", x$type[i],
-             "\nshortLabel ", x$shortLabel[i],
-             "\nlongLabel ", x$longLabel[i],
-             "\nvisibility ", x$visibility[i],
-             "\nbigDataUrl ", x$bigDataUrl[i],
-             "\nhtml ", x$html[i],
-             "\ncolor ", x$color[i], 
-             "\npriority ", x$priority[i],
-             "\nautoScale ", x$autoScale[i],
-             "\nsmoothingWindow ", x$smoothingWindow[i],
-             "\nmaxHeightPixels ", x$maxHeightPixels[i], "\n")
+      paste0(
+        "\ntrack ", x$track[i],
+        "\ntype ", x$type[i],
+        "\nshortLabel ", x$shortLabel[i],
+        "\nlongLabel ", x$longLabel[i],
+        "\nvisibility ", x$visibility[i],
+        "\nbigDataUrl ", x$bigDataUrl[i],
+        "\nhtml ", x$html[i],
+        "\ncolor ", x$color[i], 
+        "\npriority ", x$priority[i],
+        "\nautoScale ", x$autoScale[i],
+        "\nsmoothingWindow ", x$smoothingWindow[i],
+        "\nmaxHeightPixels ", x$maxHeightPixels[i],
+        "\nwindowingFunction ", x$windowingFunction[i],
+        "\n"
+      )
     })
     linesNow <- paste0(linesNow, collapse = "")
     linesNow <- paste0("hub RLBase (", x$modeNow[1], ")",
@@ -121,6 +126,7 @@ linesNow <- sapply(c("S96", "dRNH"), function(x) {
          "\npriority ", sample(1:2, 1),
          "\nautoScale ", "on",
          "\nsmoothingWindow ", "8",
+         "\nwindowingFunction ", "mean",
          "\nmaxHeightPixels ", "100:40:8", "\n")
 })
 linesNow <- paste0(linesNow, collapse = "")
@@ -137,11 +143,12 @@ linesNow2 <- sapply(c("S96", "dRNH"), function(x) {
          "\npriority ", sample(1:2, 1),
          "\nautoScale ", "on",
          "\nsmoothingWindow ", "8",
+         "\nwindowingFunction ", "mean",
          "\nmaxHeightPixels ", "100:40:8", "\n")
 })
 linesNow <- paste0(linesNow, paste0(linesNow2, collapse = ""), collapse = "")
 write_lines(paste0("<h2>Description</h2>\n<p>Name: RL Regions (RLBase V1)</p>"), file = paste0(GEN_BROWSE_HTML_DIR, "rlregions_table.bb.html"))
-load("misc-data/rlhub/rlregions/rlregions_table.rda")
+rlregion_table <- RLHub::rlregions_meta()
 locpat <- "(.+):(.+)-(.+):(.+)"
 crp <- RColorBrewer::brewer.pal(name = "Greens", n = 8)
 x <- seq(1000)
@@ -190,6 +197,7 @@ linesNow3 <- paste0("\ntrack RLRegions",
        "\nhtml ", file.path(baseURL, "misc", "RLBase_TrackHub", "rlregions_table.bb.html"),
        "\nitemRgb on",
        "\npriority 1",
+       "\nwindowingFunction ", "mean",
        "\nmaxHeightPixels ", "100:40:8", "\n")
 linesNow <- paste0(linesNow, paste0(linesNow3, collapse = ""), collapse = "")
 
@@ -216,6 +224,7 @@ linesNow4 <- paste0("\ntrack RLFS",
                     "\npriority 1",
                     "\nautoScale ", "on",
                     "\nsmoothingWindow ", "8",
+                    "\nwindowingFunction ", "mean",
                     "\nmaxHeightPixels ", "100:40:8", "\n")
 linesNow <- paste0(linesNow, paste0(linesNow4, collapse = ""), collapse = "")
 linesNow <- paste0("hub RLBase (RL Regions)",
