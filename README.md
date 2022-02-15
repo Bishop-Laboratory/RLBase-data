@@ -198,7 +198,25 @@ CORES=44
 RLPipes run $RLPIPESOUT --bwamem2 --noreport --tsv -t $CORES
 ```
 
-8. Upload datasets to aws (requires admin privledges)
+8. Archive quant folders
+
+```shell
+rm -r $RLPIPESOUT/quant_save
+cp -r $RLPIPESOUT/quant $RLPIPESOUT/quant_save
+cd $RLPIPESOUT/quant_save
+find . -type d -maxdepth 1 -mindepth 1 -print0 | parallel -0 tar cfJ {}.tar.xz {}
+find . -type d -maxdepth 1 -mindepth 1 -exec rm -rf {} \;
+cd $RLBASEDIR
+```
+
+9. Archive peaks
+
+```shell
+mkdir $RLPIPESOUT/peaks_save
+find $RLPIPESOUT/peaks -type f -maxdepth 1 -mindepth 1 -name "*.broadPeak" -exec cp {} $RLPIPESOUT/peaks_save \;
+```
+
+10. Upload datasets to aws (requires admin privledges)
 
 ```shell
 cd $RLBASEDIR
@@ -209,7 +227,7 @@ aws s3 sync --size-only $RLPIPESOUT/bam_stats/ s3://rlbase-data/bam_stats/
 aws s3 sync --size-only $RLPIPESOUT/fastq_stats/ s3://rlbase-data/fastq_stats/
 ```
 
-9. Store .bam files (we used BOX for this part)
+11. Store .bam files (we used BOX for this part)
 
 ```shell
 FTPSITE="ftp.box.com"
@@ -217,7 +235,7 @@ REMOTEDIR="RLBase-Archive/"
 lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
 ```
 
-10. Calculate RLFS enrichment for each sample
+12. Calculate RLFS enrichment for each sample
 
 ```shell
 CORES=44
@@ -225,7 +243,7 @@ RLPIPESOUT="rlbase-data/rlpipes-out/"
 Rscript scripts/rlfsAnalyze.R $RLPIPESOUT/peaks $RLPIPESOUT/rlfs_rda $CORES
 ```
 
-11. Upload to AWS
+13. Upload to AWS
 
 ```shell
 aws s3 sync --size-only $RLPIPESOUT/rlfs_rda/ s3://rlbase-data/rlfs_rda/
@@ -323,25 +341,27 @@ CORES=44
 Rscript scripts/rlregionCountMat.R $CORES 1
 ```
 
-6. Rebuild all RLRanges and HTML notebooks
-
-```shell
-CORES=32
-Rscript scripts/runRLSeq.R $CORES
-```
-
-7. Upload results to AWS
-```shell
-aws s3 sync misc-data/reports s3://rlbase-data/reports
-aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
-```
-
-
-8. Build/Update the RLHub 
+6. Build/Update the RLHub 
 
 ```shell
 Rscript scripts/prepRLHub.R
 find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
+```
+
+7. Rebuild all RLRanges and HTML notebooks
+
+```shell
+CORES=32
+## Clear previous runs
+# rm -r "misc-data/reports/"
+# rm -r "misc-data/rlranges/"
+Rscript scripts/runRLSeq.R $CORES
+```
+
+8. Upload results to AWS
+```shell
+aws s3 sync misc-data/reports s3://rlbase-data/reports
+aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
 ```
 
 9. Update the RLHub Genome Browser TrackHub
