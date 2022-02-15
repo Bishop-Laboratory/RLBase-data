@@ -232,7 +232,7 @@ aws s3 sync --size-only $RLPIPESOUT/fastq_stats/ s3://rlbase-data/fastq_stats/
 ```shell
 FTPSITE="ftp.box.com"
 REMOTEDIR="RLBase-Archive/"
-lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 4 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
+lftp -c "open -u $(read -p "User: ";echo $REPLY),$(read -sp "Password: ";echo $REPLY) $FTPSITE; mirror -P 2 -n -R $RLPIPESOUT/bam/ $REMOTEDIR"
 ```
 
 12. Calculate RLFS enrichment for each sample
