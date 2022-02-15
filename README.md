@@ -341,25 +341,27 @@ CORES=44
 Rscript scripts/rlregionCountMat.R $CORES 1
 ```
 
-6. Rebuild all RLRanges and HTML notebooks
-
-```shell
-CORES=32
-Rscript scripts/runRLSeq.R $CORES
-```
-
-7. Upload results to AWS
-```shell
-aws s3 sync misc-data/reports s3://rlbase-data/reports
-aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
-```
-
-
-8. Build/Update the RLHub 
+6. Build/Update the RLHub 
 
 ```shell
 Rscript scripts/prepRLHub.R
 find misc-data/rlhub/ -name "*.rda" -exec aws s3 cp {} s3://rlbase-data/RLHub/ \;
+```
+
+7. Rebuild all RLRanges and HTML notebooks
+
+```shell
+CORES=32
+## Clear previous runs
+# rm -r "misc-data/reports/"
+# rm -r "misc-data/rlranges/"
+Rscript scripts/runRLSeq.R $CORES
+```
+
+8. Upload results to AWS
+```shell
+aws s3 sync misc-data/reports s3://rlbase-data/reports
+aws s3 sync misc-data/rlranges s3://rlbase-data/rlranges
 ```
 
 9. Update the RLHub Genome Browser TrackHub
