@@ -371,4 +371,10 @@ Rscript scripts/buildGenomeBrowserHub.R
 aws s3 sync misc-data/RLBase_TrackHub/ s3://rlbase-data/misc/RLBase_TrackHub/
 ```
 
+10. Upload the consensus peaksets
+
+```shell
+aws s3 cp rlbase-data/rlregions/rlregions_dRNH.narrowPeak s3://rlbase-data/misc/rlregions_dRNH.narrowPeak
+aws s3 cp rlbase-data/rlregions/rlregions_S96.narrowPeak s3://rlbase-data/misc/rlregions_S96.narrowPeak
+```
 
