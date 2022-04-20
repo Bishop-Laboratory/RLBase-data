@@ -56,7 +56,7 @@ rule clean_rlregions:
 rule get_union_peaks:
   input: 
     peaks=expand("rlregions/rlregions_{group}.narrowPeak", group=['dRNH', 'S96']),
-    manifests=expand("rlregions/hg38_manifest_{group}.csv", group=['dRNH', 'S96'])
+    manifests=expand("rlregions/rlregions_manifest_{group}.csv", group=['dRNH', 'S96'])
   output: "rlregions/rlregions_All.narrowPeak"
   threads: workflow.cores
   script: "peakUnion.R"

@@ -14,8 +14,8 @@ if (! interactive()) {
     "rlbase-data/rlregions/rlregions_S96.narrowPeak"
   )
   manifests <- list(
-    "rlbase-data/rlregions/hg38_manifest_dRNH.csv",
-    "rlbase-data/rlregions/hg38_manifest_S96.csv"
+    "rlbase-data/rlregions/rlregion_manifest_dRNH.csv",
+    "rlbase-data/rlregions/rlregion_manifest_S96.csv"
   )
   threads <- 44
   output <- "rlbase-data/rlregions/rlregions_All.narrowPeak"
@@ -31,9 +31,10 @@ names(nps) <- sapply(nps, function(x) {
 })
 
 # Get number of samples from manifests
-names(manifests) <- sapply(manifests, function(x) {
+names(manifests) <- sapply(unlist(manifests, use.names = F), function(x) {
   gsub(x, pattern = patmani, replacement = "\\1")
 })
+
 numsamps <- sapply(manifests, FUN = function(x) {
   read_csv(x, col_names = FALSE, show_col_types = FALSE) %>% nrow()
 })
@@ -48,7 +49,8 @@ rlrs <- lapply(names(nps), function(opt) {
                "signalVal", "pVal", "qVal", "peak"
              )) %>% 
     mutate(type = {{ opt }},
-           score = score / (10 * numsamps[[opt]])) %>%
+           score = score / (10 * numsamps[[opt]]),
+           score_norm = rank(score) / n()) %>%
     GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
 }) 
 names(rlrs) <- names(nps)
@@ -59,6 +61,7 @@ combo <- c(rlrs$dRNH, rlrs$S96)
 # Store type column
 types <- combo$type
 scores <- combo$score
+scores_norm <- combo$score_norm
 
 # Reduce with revmap
 rvmp <- combo %>%
@@ -69,10 +72,13 @@ revMatch <- parallel::mclapply(seq(rvmp$revmap), function(i) {
   x <- rvmp$revmap[[i]]
   list( 
     "type" = paste0(unique(types[x]), collapse = " "), 
-    "score" = mean(scores[x]))
+    "score" = mean(scores[x]),
+    "score_norm" = mean(scores_norm[x])
+  )
 }, mc.cores = threads)
 labs <- sapply(revMatch, function(x) {x$type})
 scores <-  round(sapply(revMatch, function(x) {x$score}) * 100, digits = 2)
+scores_norm <-  round(sapply(revMatch, function(x) {x$score_norm}) * 100, digits = 2)
 
 
 # Wrangle
@@ -82,6 +88,7 @@ rlregions_union <- rvmp %>%
   mutate(name = paste0("RLRegion_", seq(seqnames)),
          sources = unlist({{ labs }}),
          score = {{ scores }},
+         score_norm = {{ scores_norm }},
          strand = ".",
          sources = case_when(
            sources == "S96 dRNH" ~ "dRNH S96",

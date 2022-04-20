@@ -13,7 +13,7 @@ csvToGR <- function(csv) {
       end = gsub(location, pattern = "(.+):(.+)\\-(.+):(.+)", replacement = "\\3"),
       strand = gsub(location, pattern = "(.+):(.+)\\-(.+):(.+)", replacement = "\\4"),
       # from https://stackoverflow.com/questions/45146688/execute-dplyr-operation-only-if-column-exists
-      score = if ("confidence_level" %in% colnames(.)) confidence_level else 0
+      score = if ("cons_pct" %in% colnames(.)) cons_pct else 0
     ) %>%
     dplyr::filter(! grepl(pattern = "LRG.+", x = id)) %>%
     dplyr::select(
@@ -22,7 +22,8 @@ csvToGR <- function(csv) {
       end,
       name=id,
       score,
-      strand
+      strand,
+      cons_score
     ) %>%
     dplyr::distinct(seqnames, start, end, .keep_all = TRUE) %>%
     as.data.frame() %>%
@@ -32,7 +33,7 @@ csvToGR <- function(csv) {
       end = as.numeric(as.character(end))
     ) %>%
     na.omit() %>%
-    GenomicRanges::makeGRangesFromDataFrame() 
+    GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE) 
 }
 
 #' Makes the "Rloops" table
@@ -50,14 +51,25 @@ makeRLoops <- function(ORIG_RL, MAX_RL_SIZE, RLOOPS) {
   }
   
   # Get rloops
-  rloops <- ORIG_RL %>%
-    readRL(MAX_RL_SIZE) %>%
+  if (ORIG_RL == "rlregions/rlregions_All.narrowPeak") {
+    rloops <- readr::read_tsv(ORIG_RL, col_names = c(
+      "chrom", "start", "end", "name", "score", "strand", "source", "score_norm", "group"
+    ),skip = 1, show_col_types = FALSE) %>%
+      dplyr::filter(end - start < MAX_RL_SIZE) %>%
+      dplyr::mutate(group = {{ cond }})
+  } else {
+    rloops <- readRL(ORIG_RL, MAX_RL_SIZE)
+  } 
+  rloops <- rloops %>%
     rownames_to_column(var = "id") %>%
     mutate(id = paste0(group, "_RL", id),
            type = "Unknown",
            location = paste0(chrom, ":", start, "-", end, ":", strand),
-           confidence_level = score,
-           origName = name) 
+           origName = name) %>% 
+    dplyr::rename(
+      cons_pct = score,
+      cons_score = score_norm,
+    )
   
     
   # Check RLFS, chrom_sizes, and mask
@@ -85,14 +97,14 @@ makeRLoops <- function(ORIG_RL, MAX_RL_SIZE, RLOOPS) {
   
   source <- gsub(RLOOPS, pattern = ".*rlregions_(.+)\\.csv", replacement = "\\1")
   if (source == "All") {
-    sources <- rloops$signalValue
+    sources <- rloops$source
   } else {
     sources <- source
   }
   rlregout <- rloops %>%
     mutate(is_rlfs = id %in% !! olr,
            source = {{ sources }}) %>%
-    dplyr::select(id, type, location, confidence_level, is_rlfs, origName, source, type)
+    dplyr::select(id, type, location, cons_pct, cons_score, is_rlfs, origName, source, type)
   
   write_csv(rlregout, RLOOPS)
   return(NULL)
@@ -109,15 +121,15 @@ if (! interactive()) {
   manifest <- snakemake@params[['manifest']]
   blacklist <- snakemake@params[['blacklist']]
 } else {
-  hg38rl <- "rlregions/hg38_manifest_dRNH.csv"
-  rlregionsIn <- "rlregions/rlregions_dRNH.narrowPeak"
-  rlregout <- "rlregions/rlregions_dRNH.csv"
-  rlregtbl <- "misc/rlregions_dRNH_table.tsv"
-  rlregoutbed <- "rlregions/rlregions_dRNH.bed"
-  sigtsv <- "rlregions/rlregions_dRNH_signal.tsv"
+  hg38rl <- "rlregions/hg38_manifest_All.csv"
+  rlregionsIn <- "rlregions/rlregions_All.narrowPeak"
+  rlregout <- "rlregions/rlregions_All.csv"
+  rlregtbl <- "misc/rlregions_All_table.tsv"
+  rlregoutbed <- "rlregions/rlregions_All.bed"
+  sigtsv <- "rlregions/rlregions_All_signal.tsv"
   manifest <- "rlbase_samples.tsv"
   blacklist <- "https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz"
-  setwd("rlbase-data/")
+  setwd("../RLBase-data/rlbase-data/")
 }
 
 message(hg38rl)
@@ -130,7 +142,7 @@ message(manifest)
 message(blacklist)
 message(getwd())
 
-peaks <- read_csv(hg38rl, show_col_types = FALSE)
+peaks <- read_csv(hg38rl, show_col_types = FALSE, col_names = FALSE)
 manifest <- read_tsv(manifest, show_col_types = FALSE)
 MAX_RL_SIZE <- 50000
 
@@ -151,7 +163,7 @@ rltbl <- read_csv(rlregout, show_col_types = FALSE) %>%
     strand = gsub(location, pattern = "(.+):(.+)\\-(.+):(.+)", replacement = "\\4")
   ) %>%
   dplyr::select(
-    chrom=seqnames, start, end, strand, rlregion=id, confidence_level, is_rlfs, source
+    chrom=seqnames, start, end, strand, rlregion=id, cons_pct, cons_score, is_rlfs, source
   )
 pklst <- pblapply(
     peaks[,1,drop=TRUE],
@@ -199,13 +211,16 @@ loc <- isctSRa %>%
   ) %>% distinct(rlregion, location)
 
 # Intersect sample metadata and RL regions
-rlregionsOl <- dplyr::select(isctSRa, rlregion=rlregion.x, sample=.source, 
-                             is_rlfs=is_rlfs.x, 
-                             source = source.x,
-                             confidence_level=confidence_level.x, 
-                             signalVal=signalVal.y,
-                             pVal=pVal.y, qVal=qVal.y,
-                      contains("med"), contains("avg")) %>%
+rlregionsOl <- dplyr::select(
+  isctSRa, rlregion=rlregion.x, sample=.source, 
+  is_rlfs=is_rlfs.x, 
+  source = source.x,
+  cons_pct=cons_pct.x, 
+  cons_score=cons_score.x,
+  signalVal=signalVal.y,
+  pVal=pVal.y, qVal=qVal.y,
+  contains("med"), contains("avg")
+) %>%
   left_join(loc) %>%
   relocate(location, .after = rlregion)
 message("- Adding in metadata")

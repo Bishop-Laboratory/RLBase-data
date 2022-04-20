@@ -11,6 +11,7 @@ dir.create("misc-data/rlhub", showWarnings = FALSE)
 # Directory where RMapDB bigWigs were downloaded to
 # This is the result of running in the shell:
 # `aws s3 sync s3://rmapdb-data/coverage/ rlbase-data/rlpipes-out/coverage/`
+setwd("../RLBase-data/")
 BW_FOLDER <- "rlbase-data/rlpipes-out/coverage/"
 
 # Number of cores to use for parallel operations
@@ -37,7 +38,7 @@ cts_regions <- union_regions %>%
     Strand=gsub(location, pattern = pattern, replacement = "\\4")
   ) %>%
   dplyr::select(-location)
-  
+
 
 # Get seq info
 samps <- read_tsv("../RLBase-data/rlbase-data/rlbase_samples.tsv", show_col_types = FALSE) %>%
@@ -51,6 +52,7 @@ samps <- read_tsv("../RLBase-data/rlbase-data/rlbase_samples.tsv", show_col_type
 
 message("Starting Feature Counts")
 samps$paired_end[samps$experiment == "SRX9684573"] <- FALSE  # Correct a mistaken one
+# samps$paired_end[samps$experiment == "SRX8122770"] <- TRUE
 # https://stackoverflow.com/questions/3318333/split-a-vector-into-chunks
 chunk2 <- function(x,n) split(x, cut(seq_along(x), n, labels = FALSE)) 
 chunks <- chunk2(x = seq(nrow(samps)), n = 3)

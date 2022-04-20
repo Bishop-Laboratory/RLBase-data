@@ -42,7 +42,7 @@ rseq_out/
 
 *rlregions*.csv
 build.log
-
+*.mat.gz
 dist/
 build/
 *.egg-info/

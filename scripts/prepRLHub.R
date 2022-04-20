@@ -79,10 +79,10 @@ if (opt != "dRNH") {
     mutate(
       corrR = NA,
       corrPVal = NA,
-      corrPAdj = NA
+      corrPAdj = NA,
+      rlregion = gsub(rlregion, pattern = "All_", replacement = "")
     ) 
   save(rlregions_table, compress = "xz", file = outtbl)
-  
 }
 
 # Get the annotated rlregions table
@@ -143,8 +143,9 @@ save(rlsamples, file = "misc-data/rlhub/rlsamples/rlsamples.rda", compress = "xz
 message("- 4. RLFS-res")
 dir.create("misc-data/rlhub/rlfsres", showWarnings = FALSE)
 
-
 load("rlbase-data/misc/rlfsRes__full.rda")
+load("misc-data/model/prepFeatures.rda")
+load("misc-data/model/fftModel.rda")
 
 # Get the predictions
 rlfsres <- pbapply::pblapply(rlfsRes_full, function(x) {
@@ -283,7 +284,9 @@ tpmrl2 <- inner_join(rl2cond, tpmrl,  by = c("rlsample" = "name")) %>%
   group_by(rlregion, exp_matchCond) %>%
   summarise(rl = mean(rl))
 # Combined expression and r-loop
-tpm_join <- inner_join(ungroup(tpmrl2), ungroup(tpmexp2), by = c("rlregion", "exp_matchCond"))
+tpm_join <- inner_join(ungroup(mutate(
+  tpmrl2, rlregion=gsub(rlregion, pattern = "All_", replacement = "")
+)), ungroup(tpmexp2), by = c("rlregion", "exp_matchCond"))
 # Get corr
 corr_estimate <- tpm_join %>%
   group_by(rlregion) %>%
@@ -311,24 +314,14 @@ rlregion_table <- left_join(rlregions, corr_estimate, by = "rlregion")
 # Geometric mean of confidence, nStudies, medQVal, and medSignalVal (normalized) * a multiplier than rewards being found by S96 and dRNH
 rlregion_table$mplyr <- ifelse(rlregion_table$source == "dRNH S96", 1.25, 1)
 rlregion_table <- rlregion_table %>%
-  mutate(confidence_score = mplyr*((scale(log2(confidence_level), center = FALSE)*
-                           scale(nStudies, center = FALSE)*
-                           scale(log2(medQVal), center = FALSE)*
-                           scale(log2(medSignalVal), center = FALSE))^(1/4))) %>%
+  mutate(confidence_score = mplyr*((scale(log2(pct_case), center = FALSE)*
+                                      scale(nStudies, center = FALSE)*
+                                      scale(log2(medQVal), center = FALSE)*
+                                      scale(log2(medSignalVal), center = FALSE))^(1/4))) %>%
   mutate(confidence_score = as.numeric(confidence_score)) %>%
   arrange(desc(confidence_score)) %>%
-  dplyr::select(-mplyr, conservation_score=confidence_level) %>%
-  dplyr::mutate(rlregion = gsub(rlregion, pattern = "All_", replacement = ""))
+  dplyr::select(-mplyr, conservation_pct=cons_pct, conservation_score=cons_score)
 save(rlregion_table, file = "misc-data/rlhub/rlregions/rlregions_table.rda", compress = "xz")
 tpm_rl_exp <- tpm_join
 save(tpm_rl_exp, file = "misc-data/rlhub/rlregions/tpm_rl_exp.rda", compress = "xz")
 
-# rlr <- rlregion_table %>%
-#   select(corrR, allGenes) %>%
-#   mutate(allGenes = map(allGenes, function(x) {unlist(strsplit(x, split = ","))})) %>%
-#   unnest(allGenes) %>%
-#   group_by(allGenes) %>%
-#   summarize(
-#     corrR = corrR[which.max(abs(corrR))]
-#   ) %>%
-#   write_csv("corGSEA.csv")
