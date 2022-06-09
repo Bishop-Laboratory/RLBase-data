@@ -186,7 +186,8 @@ infile <- "misc-data/rlhub/rlregions/rlregions_table.unsorted.bed"
 infile2 <- "misc-data/rlhub/rlregions/rlregions_table.bed"
 outfile <- "misc-data/rlhub/rlregions/rlregions_table.bb"
 system(paste0("sort -k1,1 -k2,2n ", infile, " > ", infile2))
-system(paste0("~/miniconda3/condabin/conda run -n rlbaseData bedToBigBed -type=bed9 ", infile2, " tmp/chrom.sizes ", outfile))
+download.file("https://hgdownload-test.gi.ucsc.edu/goldenPath/hg38/bigZips/hg38.chrom.sizes", destfile = "tmp/hg38.chrom.sizes")
+system(paste0("~/miniconda3/condabin/conda run -n rlbaseData bedToBigBed -type=bed9 ", infile2, " tmp/hg38.chrom.sizes ", outfile))
 aws.s3::put_object(file = outfile, object = "misc/rlregions_table.bb", bucket = RLSeq:::RLBASE_S3, multipart = TRUE, show_progress = TRUE)
 linesNow3 <- paste0("\ntrack RLRegions",
        "\ntype ", "bigBed 9",
