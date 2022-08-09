@@ -8,9 +8,8 @@ if (! interactive()) {
   args <- commandArgs(trailingOnly = TRUE)
   CORES <- args[1]
 } else {
-  CORES <- 40
+  CORES <- 44
 }
-
 
 dir.create("misc-data/rlranges", showWarnings = FALSE)
 dir.create("misc-data/reports", showWarnings = FALSE)
@@ -60,6 +59,14 @@ res2 <- parallel::mclapply(
         rlr <- rlr2
       }
       
+      # Rewrite coverage path to cloud location
+      rlr@metadata$coverage <- paste0(
+        RLSeq:::RLBASE_URL,
+        "/coverage/",
+        rlsamples$rlsample[i],
+        "_", rlsamples$genome[i], ".bw"
+      )
+      
       # Save RDS
       saveRDS(
         rlr,
@@ -78,6 +85,7 @@ res2 <- parallel::mclapply(
       )
     }
     
+    rlr
     
     # Report
     if (! file.exists(paste0(
